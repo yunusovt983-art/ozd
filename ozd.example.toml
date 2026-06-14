@@ -1,0 +1,83 @@
+# OpenZFS Daemon — пример конфига для 60 HDD (per-disk ZFS-датасеты).
+#
+# ZFS-тюнинг каждого диска (один диск = один zpool, БЕЗ RAIDZ — durability
+# даёт репликация демона R=2, ADR-0001):
+#   zpool create -o ashift=12 disk01 /dev/sdX
+#   zfs set recordsize=1M atime=off compression=lz4 xattr=sa logbias=throughput disk01
+#   zfs create disk01/ozd
+#
+# Индексы (redb) лучше держать на NVMe: index_path = "/nvme/ozd/idx/disk01".
+
+listen = "127.0.0.1:9100"
+replicas = 2        # R: две копии на разных дисках
+write_quorum = 2    # W
+free_space_cache_ttl_secs = 5   # TTL-кэш statvfs (#137)
+speculative_retry_ms = 100      # hedged read (#121/#143): read-нога медлит → дубль write-mostly-ноге; 0 = off
+adaptive_hedge = true           # E27: порог hedge = скользящий p99 чтений (clamp 10мс..2с);
+                                # speculative_retry_ms — fallback прогрева; гейдж ozd_hedge_threshold_ms
+gc_discard_ratio = 0.5          # GC сегментов (#122): rewrite если мусора ≥ 50% (write-amp ≈ 2×)
+gc_interval_secs = 300          # фоновый GC раз в 5 мин; 0 = только вручную (POST /admin/gc)
+zfs_health_interval_secs = 30   # опрос zpool status → FSM #142 → ShardStatus; 0 = off
+drive_suspect_threshold = 3     # FSM: сбоев подряд до эскалации (гистерезис)
+drive_recover_threshold = 2     # FSM: успехов подряд до возврата в Online
+disk_slow_interval_secs = 10    # E28 (#129): EWMA-латентность по шарду vs медиана парка →
+disk_slow_floor_ms = 250        # slow-диск → Suspect (вес ×0.01 в HRW: read-leg и новые
+disk_slow_factor = 4.0          # записи уходят) ДО того, как ZFS увидит ошибки; 0 = off
+scrub_interval_secs = 600       # deep-scrub цикл (#102/#141): CRC-чтение партиями; 0 = вручную
+scrub_keys_per_cycle = 5000     # бюджет цикла на шард (#141 cycle-budget)
+heal_mrf = true                 # MRF (#140): точечный heal недавно-сбойных записей (дренаж раз в 5с)
+heal_parallelism = 4            # E16: параллельных воркеров дренажа heal-очереди
+heal_max_per_shard = 2          # E16: bulkhead — одновременных починок на один шард
+bg_max_bytes_per_sec = 67108864 # E19 (#131): потолок бюджета фона (GC/scrub/resilver/heal),
+                                # 64 МиБ/с; 0 = троттлинг выключен
+bg_min_bytes_per_sec = 4194304  # пол 4 МиБ/с — resilver не голодает до нуля
+bg_fg_busy_ops = 50.0           # foreground занят при > N оп/с (puts+gets) → бюджет ×0.5 (AIMD)
+# redundancy = "erasure"        # E20 (#138): K+M кусков вместо зеркала (1.5× при 4+2);
+# ec_data = 4                   # дефолт "mirror"; erasure требует >= K+M дисков;
+# ec_parity = 2                 # переживает M отказов; мелочь (< ec_min_size)
+# ec_min_size = 65536           # всегда зеркалом R=2; кворум кусков K+1
+# ec_write_quorum = 5
+# blake3_outboard = true        # E23 (#79): BLAKE3-меркл outboard для тел >= ob_min_size
+# ob_min_size = 262144          # → Range GET верифицируется против write-time root
+                                # (x-ozd-verified: blake3; ~0.4% места; сильнее CRC32)
+
+# [cache]                       # E25 (#143): СуперДиск — NVMe read-leg для тел:
+# path = "/nvme/ozd/cache"      # чтения с NVMe (<1мс vs 10-30мс HDD-seek), запись
+# max_bytes = 1099511627776     # write-through; FIFO-эвикция сегментами; битая
+# min_size = 4096               # копия self-heal'ится с HDD; + coalescing #144:
+# segment_max_size = 268435456  # конкурентные GET одного CID = одно чтение диска
+
+[auth]                          # E13: SigV4; УБРАТЬ секцию = dev-режим (только loopback!)
+access_key = "ozd"              # эти же ключи — в Kubo go-ds-s3 (accessKey/secretKey)
+secret_key = "CHANGE-ME-long-random-secret"
+max_skew_secs = 900             # допуск рассинхрона часов
+
+[engine]
+segment_max_size = 2147483648   # 2 ГБ pack-сегменты
+inline_min = 4096               # мелочь — в redb-индекс (минус seek HDD)
+fsync_items = 256               # fsync раз в N записей (durability via replication #111)
+compress = "zstd"               # E10: сжатие тел (CID/ключи — никогда; несжимаемое — как есть)
+compress_min = 512              # сжимать только тела ≥ порога
+fadvise_dontneed = true         # E26 (#63, Redis): write-once байты сегментов не вымывают
+                                # горячие чтения из RAM (Linux; горячий 8МБ-хвост хранится)
+ballast_bytes = 1073741824      # E18 (#127): 1 ГБ балласт на каждом data_path;
+                                # авто-сброс при ENOSPC (graceful recovery),
+                                # ручной — POST /admin/ballast/release; 0 = выкл
+
+# --- диски: по одному блоку на каждый из 60 ---
+[[disks]]
+data_path = "/disk01/ozd"
+zfs_pool = "disk01"             # включает zpool-health-монитор и /admin/zfs
+zfs_dataset = "disk01/ozd"      # для точной capacity (дефолт = zfs_pool)
+# index_path = "/nvme/ozd/idx/disk01"
+# failover_path = "/nvme/ozd/failover/disk01"  # E18 (#128): запасной путь
+                                # сегментов (ДРУГОЙ диск!) — экстренная ротация
+                                # при отказе data_path, failback автоматически
+
+[[disks]]
+data_path = "/disk02/ozd"
+
+[[disks]]
+data_path = "/disk03/ozd"
+
+# ... добавить /disk04 .. /disk60 по образцу

@@ -1,0 +1,18 @@
+[package]
+name = "ozd-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+sha2 = { workspace = true }
+ozd-domain = { workspace = true }
+xxhash-rust = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }
+reed-solomon-erasure = "6"
+abao = { version = "0.2.0", default-features = false, features = ["group_size_16k"] }
+
+[dev-dependencies]
+ozd-engine = { workspace = true }
+tempfile = { workspace = true }

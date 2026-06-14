@@ -1,0 +1,47 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ozd-domain",
+    "crates/ozd-engine",
+    "crates/ozd-app",
+    "crates/ozd-ipfs",
+    "crates/ozd-admin",
+    "crates/ozd-zfs",
+    "crates/ozd-daemon",
+    "crates/ozd-bench",
+]
+exclude = ["Vendor"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+ozd-domain = { path = "crates/ozd-domain" }
+ozd-engine = { path = "crates/ozd-engine" }
+ozd-app = { path = "crates/ozd-app" }
+ozd-ipfs = { path = "crates/ozd-ipfs" }
+ozd-admin = { path = "crates/ozd-admin" }
+ozd-zfs = { path = "crates/ozd-zfs" }
+
+redb = "2"
+crc32fast = "1"
+zstd = "0.13"
+sha2 = "0.10"
+hmac = "0.12"
+tower = "0.5"
+xxhash-rust = { version = "0.8", features = ["xxh3", "xxh64"] }
+thiserror = "2"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net", "time"] }
+axum = "0.8"
+parking_lot = "0.12"
+tempfile = "3"
+
+[profile.release]
+lto = "thin"

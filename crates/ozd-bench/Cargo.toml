@@ -1,0 +1,10 @@
+[package]
+name = "ozd-bench"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ozd-domain = { workspace = true }
+ozd-engine = { workspace = true }
+ozd-app = { workspace = true }
+tempfile = { workspace = true }

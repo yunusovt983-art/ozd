@@ -1,0 +1,13 @@
+[package]
+name = "ozd-admin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ozd-domain = { workspace = true }
+ozd-app = { workspace = true }
+ozd-zfs = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

@@ -1,0 +1,9 @@
+[package]
+name = "ozd-domain"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Правило зависимостей: домен БЕЗ IO-крейтов (гексагон, ARCHITECTURE §6).
+[dependencies]
+thiserror = { workspace = true }

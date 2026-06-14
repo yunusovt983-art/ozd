@@ -1,0 +1,10 @@
+[package]
+name = "ozd-zfs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Адаптер ZFS-ops (порт из Go internal/zfspool, см. docs/GO-MIGRATION.md P1).
+[dependencies]
+ozd-domain = { workspace = true }
+tracing = { workspace = true }

@@ -1,0 +1,24 @@
+# Второй Мозг (Wiki) — личная база знаний, не для репо
+Wiki/
+
+# Rust build artifacts
+/target
+
+# Vendor (воспроизводим через cargo vendor)
+Vendor/
+
+# Секреты
+ozd.toml
+*.redb
+
+# Obsidian (конфиг Второго Мозга — локальный)
+.obsidian/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
