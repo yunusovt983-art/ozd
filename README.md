@@ -6,6 +6,75 @@
 **Целевой деплой:** один сервер, **60 × HDD**, один IPFS-демон (~3,8 млрд блоков, ~480 ТБ
 полезных при R=2). Специфика HDD/масштаба вынесена в [ARCHITECTURE §8](Wiki/ARCHITECTURE.md#8-целевой-масштаб-60--hdd-на-одном-сервере).
 
+## Архитектура крейтов
+
+```
+╔══════════════════════════════════════════════════════════════════════════════════════╗
+║  ozd — OpenZFS Daemon  ·  IPFS object storage on 60 HDD  ·  Rust / tokio / axum    ║
+╚══════════════════════════════════════════════════════════════════════════════════════╝
+
+                        ┌─────────────────────────┐
+                        │   Kubo (IPFS daemon)     │
+                        │   go-ds-s3 S3 plugin     │
+                        └────────────┬────────────┘
+                                     │ HTTP S3 API + SigV4
+╔════════════════════════╗            ▼           ╔═════════════════════════╗
+║ ozd-ipfs               ║◄───────────────────────►║ ozd-admin               ║
+║ S3 gateway (axum)      ║  ozd-daemon (binary)   ║ REST /admin/*           ║
+║ SigV4 auth (E13)       ║  tokio runtime         ║ GC · Scrub · Resilver   ║
+║ Range GET / suffix     ║  config.toml           ║ CAR import/export       ║
+║ BAO outboard (E23)     ║  graceful shutdown     ║ healthz · /metrics      ║
+╚════════════════════════╝                        ╚═════════════════════════╝
+            │                                               │
+            └──────────────────────┬────────────────────────┘
+                                   ▼
+╔══════════════════════════════════════════════════════════════════════╗
+║  ozd-app  — application layer                                        ║
+║                                                                      ║
+║  ┌────────────────────────────┐  ┌─────────────────────────────┐    ║
+║  │ Pool                       │  │ CacheTier — SuperDisk (E25)  │    ║
+║  │ HRW placement (free-weight)│  │ NVMe read-leg (Discord-style)│    ║
+║  │ R=2 mirror / erasure 4+2   │  │ write-through, FIFO eviction │    ║
+║  │ hedged read (E27 p99-adapt)│  │ single-flight coalescing     │    ║
+║  │ handoff · MRF · speculative│  │ bitrot self-heal from pool   │    ║
+║  └────────────────────────────┘  └─────────────────────────────┘    ║
+║                                                                      ║
+║  ┌──────────────────────────────────────────────────────────────┐    ║
+║  │ GC (discard-ratio, CAS-move)  · Scrub (deep-CRC, cursor)     │    ║
+║  │ Resilver (walk add-only, R)   · HealQueue (priority+bulkhead)│    ║
+║  │ BgThrottle (AIMD leaky-bucket)· DiskSlowMonitor (EWMA E28)   │    ║
+║  │ Erasure 4+2 (Reed-Solomon)    · Migration mirror→erasure      │    ║
+║  │ BLAKE3 outboard (abao E23)    · CAR import/export (E22)      │    ║
+║  │ OpsMetrics 30+ atomics        · RollingP99 (22 log2-buckets) │    ║
+║  └──────────────────────────────────────────────────────────────┘    ║
+╚══════════════════════════════════════════════════════════════════════╝
+          │                         │                      │
+          ▼                         ▼                      ▼
+╔══════════════════╗  ╔═══════════════════════╗  ╔══════════════════════╗
+║ ozd-engine        ║  ║ ozd-zfs               ║  ║ ozd-domain           ║
+║ DiskEngine        ║  ║ Runner (Local/Sudo)   ║  ║ traits:              ║
+║ pack-segs ≤2GB    ║  ║ HealthFsm 4-state     ║  ║ BlockStore           ║
+║ redb index NVMe   ║  ║ Properties+Source     ║  ║ ShardEngine          ║
+║ CRC32 / zstd      ║  ║ drift-audit 60 pools  ║  ║ PlacementPolicy      ║
+║ addr v3 (36B)     ║  ║ user-props ozd:*      ║  ║ piece (EC envelope)  ║
+║ ballast / WAL-f/o ║  ║ freeing→eff_free      ║  ║ DomainError          ║
+║ fadvise DONTNEED  ║  ║ sentinel errors       ║  ║                      ║
+╚════════╤══════════╝  ╚═══════════════════════╝  ╚══════════════════════╝
+         │
+         ▼
+╔══════════════════════════════════════════════════════════════════════╗
+║  Physical Storage                                                    ║
+║                                                                      ║
+║  ┌─────────────────────────┐    ┌──────────────────────────────┐    ║
+║  │  NVMe SSD               │    │  60 × HDD  (JBOD)            │    ║
+║  │  redb — CID index       │    │  XFS per disk                │    ║
+║  │  CacheTier segments     │    │  pack-segments ≤2GB          │    ║
+║  │  T_CURSOR (checkpoints) │    │  per-disk ZFS pool (ozd-zfs) │    ║
+║  │  ballast.bin (E18)      │    │  ~480TB полезных при R=2     │    ║
+║  └─────────────────────────┘    └──────────────────────────────┘    ║
+╚══════════════════════════════════════════════════════════════════════╝
+```
+
 ## Идея (Часть 1)
 
 ```
