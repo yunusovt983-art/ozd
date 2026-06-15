@@ -1,5 +1,47 @@
 # Architecture (Variant B) — ZFS владеет субстратом, демон тонкий
 
+## Helicopter View — Domain-Driven Design (DDD)
+
+```
+╔══ ozd — ARCHITECTURE-ZFS VARIANT · Domain-Driven Design · Hexagonal ══╗
+║ ФИЛОСОФИЯ: ZFS = substratum (пулинг, mirror, checksum, resilver)
+║ Демон = тонкий слой: IPFS/S3 логика + индекс (redb) на NVMe
+║ Избыточность и целостность — дело ZFS, не приложения
+║
+║  [Upstream: Kubo+Admin]
+║           ↓ BlockStore trait (driving port)
+║  ┌─────────────────────────────────────────────────┐
+║  │ Core Domain (minimal)                           │
+║  │ • ZfsBlockStore (IPFS BlockStore impl)          │
+║  │ • put: verify CID, write tank/blocks, index     │
+║  │ • get: lookup redb, read tank/, ZFS checksum    │
+║  │ • delete: unlink tank/, redb-cleanup            │
+║  └─────────────────────────────────────────────────┘
+║           ↓ ShardEngine port (driven)
+║  ┌─────────────────────────────────────────────────┐
+║  │ Adapters (ZFS, redb)                            │
+║  │ • ZfsRunner: `zfs` CLI wrapper, HealthFsm       │
+║  │ • redbIndex: CID → (path, metadata)             │
+║  │ • Indexer: crawl tank/, rebuild redb on start   │
+║  └─────────────────────────────────────────────────┘
+║           ↓
+║  ┌─────────────────────────────────────────────────┐
+║  │ Physical Storage                                │
+║  │ • NVMe: redb (CID index) + T_CURSOR checkpoints │
+║  │ • 60 HDD: ZFS pool tank (mirror vdev)           │
+║  │   tank/blocks/: файлы по CID (ZFS-управляемые) │
+║  │   tank/index:   NVMe-маунт со своей redb       │
+║  └─────────────────────────────────────────────────┘
+║
+║ KEY DIFFERENCE vs Variant A:
+║ • Нет Pool/HRW (ZFS vdev striping вместо)
+║ • Нет app-репликации (ZFS mirror вместо)
+║ • Нет walk-resilver (ZFS resilver вместо)
+║ • Нет CID-verify (ZFS checksum гарантирует)
+║ • Индекс: только redb (CID → path), не адреса
+╚════════════════════════════════════════════════════╝
+```
+
 > Альтернатива основной [ARCHITECTURE.md](ARCHITECTURE.md) (Variant A: XFS + app-репликация).
 > Выбор между ними — [ADR 0001](adr/0001-storage-substrate.md). Здесь — **«философия ZFS»**:
 > пулинг, избыточность, целостность, кэш и компрессию отдаём OpenZFS, а демон сводим к
