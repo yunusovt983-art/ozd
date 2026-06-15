@@ -159,7 +159,7 @@ sequenceDiagram
     and
         A->>D2: append в pack-сегмент, адрес->redb/NVMe
     end
-    Note over A,D2: успех при W>=2 подтверждениях
+    Note over A,D2: успех при W=2 подтверждениях (write-quorum)
     A-->>I: Ok(cid)
 ```
 
