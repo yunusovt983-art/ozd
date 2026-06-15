@@ -3,43 +3,69 @@
 ## Helicopter View — Domain-Driven Design (DDD)
 
 ```
-╔══ ozd — ARCHITECTURE-ZFS VARIANT · Domain-Driven Design · Hexagonal ══╗
-║ ФИЛОСОФИЯ: ZFS = substratum (пулинг, mirror, checksum, resilver)
-║ Демон = тонкий слой: IPFS/S3 логика + индекс (redb) на NVMe
-║ Избыточность и целостность — дело ZFS, не приложения
-║
-║  [Upstream: Kubo+Admin]
-║           ↓ BlockStore trait (driving port)
-║  ┌─────────────────────────────────────────────────┐
-║  │ Core Domain (minimal)                           │
-║  │ • ZfsBlockStore (IPFS BlockStore impl)          │
-║  │ • put: verify CID, write tank/blocks, index     │
-║  │ • get: lookup redb, read tank/, ZFS checksum    │
-║  │ • delete: unlink tank/, redb-cleanup            │
-║  └─────────────────────────────────────────────────┘
-║           ↓ ShardEngine port (driven)
-║  ┌─────────────────────────────────────────────────┐
-║  │ Adapters (ZFS, redb)                            │
-║  │ • ZfsRunner: `zfs` CLI wrapper, HealthFsm       │
-║  │ • redbIndex: CID → (path, metadata)             │
-║  │ • Indexer: crawl tank/, rebuild redb on start   │
-║  └─────────────────────────────────────────────────┘
-║           ↓
-║  ┌─────────────────────────────────────────────────┐
-║  │ Physical Storage                                │
-║  │ • NVMe: redb (CID index) + T_CURSOR checkpoints │
-║  │ • 60 HDD: ZFS pool tank (mirror vdev)           │
-║  │   tank/blocks/: файлы по CID (ZFS-управляемые)  │
-║  │   tank/index:   NVMe-маунт со своей redb        │
-║  └─────────────────────────────────────────────────┘
-║
-║ KEY DIFFERENCE vs Variant A:
-║ • Нет Pool/HRW (ZFS vdev striping вместо)
-║ • Нет app-репликации (ZFS mirror вместо)
-║ • Нет walk-resilver (ZFS resilver вместо)
-║ • Нет CID-verify (ZFS checksum гарантирует)
-║ • Индекс: только redb (CID → path), не адреса
-╚════════════════════════════════════════════════════╝
+╔════════════════════════════════════════════════════════════════════╗
+║           OPENZFS DAEMON · ARCHITECTURE-ZFS VARIANT                ║
+║           DDD + Hexagonal Architecture                             ║
+║           "ZFS owns durability, we own semantics"                  ║
+╠════════════════════════════════════════════════════════════════════╣
+║                                                                    ║
+║                  Upstream Systems                                  ║
+║                                                                    ║
+║     IPFS Node (Kubo)              S3 Gateway (Admin)               ║
+║         │                              │                           ║
+║         └──────────────┬───────────────┘                           ║
+║                        │                                           ║
+║                        ▼                                           ║
+║     ┌──────────────────────────────────────────────┐               ║
+║     │         ZfsBlockStore Application            │               ║
+║     │                                               │               ║
+║     │ put(block) → verify CID → write tank/blocks  │               ║
+║     │ get(cid) → redb lookup → read tank/ + verify │               ║
+║     │ delete(cid) → unlink tank/ + redb cleanup    │               ║
+║     │ gc() → ZFS GC, redb index maintenance        │               ║
+║     │ scrub() → ZFS checksums, optionally CID-verify│              ║
+║     └──────────────────────┬───────────────────────┘               ║
+║                            │ Port: BlockStore trait                ║
+║                            ▼                                       ║
+║     ┌──────────────────────────────────────────────┐               ║
+║     │            Core Domain (minimal)             │               ║
+║     │                                               │               ║
+║     │ CID, Block, Pin, IntegrityPolicy              │               ║
+║     │ (semantic layer, format-agnostic)             │               ║
+║     └──────────────────────┬───────────────────────┘               ║
+║                            │ Port: ZfsShardEngine                  ║
+║                            ▼                                       ║
+║     ┌──────────────────────────────────────────────┐               ║
+║     │          Adapter Layer (ZFS, redb)           │               ║
+║     │                                               │               ║
+║     │ ZfsRunner → `zfs` CLI, HealthFsm (4 states)  │               ║
+║     │ redbIndex → CID ↔ path lookup (NVMe)         │               ║
+║     │ Indexer → crawl tank/ on startup              │               ║
+║     └──────────────────────┬───────────────────────┘               ║
+║                            │                                       ║
+║                            ▼                                       ║
+║     ┌──────────────────────────────────────────────┐               ║
+║     │        OpenZFS Substrate (tank pool)         │               ║
+║     │                                               │               ║
+║     │ 30× mirror vdev (HDD pairs)                   │               ║
+║     │ + special vdev (NVMe: redb + T_CURSOR)       │               ║
+║     │                                               │               ║
+║     │ ZFS manages:                                  │               ║
+║     │  • Checksum (detect bit-rot)                  │               ║
+║     │  • Mirror (replicate to pair)                 │               ║
+║     │  • Self-heal (corrupt block → read from pair) │               ║
+║     │  • Resilver (rebuild on disk failure)         │               ║
+║     │  • ARC L2ARC caching                          │               ║
+║     │  • Snapshots, compression                     │               ║
+║     └──────────────────────────────────────────────┘               ║
+║                                                                    ║
+║ Key Delegation:                                                   ║
+║                                                                    ║
+║ ✓ App handles:      IPFS semantics, CID-to-block mapping         ║
+║ ✓ ZFS handles:      Durability, integrity, replication, recovery  ║
+║ ✓ Index (redb):     Fast CID → path lookup (in-memory + NVMe)    ║
+║                                                                    ║
+╚════════════════════════════════════════════════════════════════════╝
 ```
 
 > Альтернатива основной [ARCHITECTURE.md](ARCHITECTURE.md) (Variant A: XFS + app-репликация).

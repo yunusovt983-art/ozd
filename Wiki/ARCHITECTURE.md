@@ -1,65 +1,80 @@
 # Architecture — OpenZFS Daemon (Часть 1) · Variant A (XFS)
 
 ```
-╔══════════════════════════════════════════════════════════════════════════════════════════╗
-║          ozd — HELICOPTER VIEW  ·  Domain-Driven Design  ·  Hexagonal Architecture       ║
-╚══════════════════════════════════════════════════════════════════════════════════════════╝
-
-  ФИЛОСОФИЯ: домен не знает о дисках. Диски не знают о IPFS. Адаптеры склеивают.
-  ЦЕЛЬ: один IPFS-демон → единый BlockStore → физически 60 HDD + NVMe (JBOD, ADR-0001).
-
-╔══════════════════════════════════════════════════════════════════════════════════════════╗
-║  UPSTREAM (Generic)            DRIVING PORTS           CORE DOMAIN                       ║
-║                                                                                          ║
-║  ┌──────────────────────┐      ┌─────────────┐   ┌─────────────────────────────────┐     ║
-║  │   Kubo (IPFS daemon) │      │  BlockStore │   │       Block Storage CTX         │     ║
-║  │   go-ds-s3 plugin    │─────►│    port     │──►│  *** CORE DOMAIN ***            │     ║
-║  │   S3 API calls       │      │  (trait)    │   │                                 │     ║
-║  └──────────────────────┘      └─────────────┘   │  put(key, bytes)                │     ║
-║                                                  │  get(key) -> bytes              │     ║
-║  ┌──────────────────────┐      ┌─────────────┐   │  delete(key)                    │     ║
-║  │   Admin / Ops        │      │  AdminPort  │   │                                 │     ║
-║  │   curl /admin/*      │─────►│  (REST)     │──►│  Invariants:                    │     ║
-║  │   Prometheus scrape  │      └─────────────┘   │  · CID == hash(data) всегда     │     ║
-║  └──────────────────────┘                        │  · R копий на R разных дисках   │     ║
-║                                                  │  · без центрального каталога    │     ║
-╠══════════════════════════════════════════════════│  · placement детерминирован     ║     ║
-║  DRIVEN PORTS (secondary)                        └─────────────┬───────────────────┘     ║
-║                                                                │                         ║
-║  ┌───────────────────────────────────────────────┐             │  domain services        ║
-║  │           ShardEngine port (trait)            │◄────────────┘                         ║
-║  │  put / get / delete / capacity / gc / scrub   │  Pool implements:                     ║
-║  │  resilver / scan_segment / stat_obj           │  · HRW placement (free-weight)        ║
-║  └───────────┬───────────────────┬───────────────┘  · R=2 mirror / erasure 4+2           ║
-║              │                   │                   · write-quorum W:2                  ║
-║              │                   │                   · hedged read + handoff             ║
-║  ┌───────────▼──────┐  ┌─────────▼──────────┐        · GC · Scrub · Resilver             ║
-║  │  DiskEngine      │  │  ZfsRunner         │        · HealQueue · BgThrottle            ║
-║  │  (ozd-engine)    │  │  (ozd-zfs)         │        · DiskSlowMonitor · RollingP99      ║
-║  │                  │  │                    │                                            ║
-║  │ pack-segs ≤2GB   │  │ zpool status       │                                            ║
-║  │ redb CID-index   │  │ HealthFsm 4-state  │                                            ║
-║  │ CRC32 / zstd     │  │ Properties+Source  │                                            ║
-║  │ addr v3 (36B)    │  │ drift-audit        │   ┌──────────────────────────────────────┐ ║
-║  │ ballast / WAL-fo │  │ user-props ozd:*   │   │  CacheTier — SuperDisk (E25)         │ ║
-║  │ fadvise DONTNEED │  │ freeing→eff_free   │   │  NVMe read-leg (Discord-style)       │ ║
-║  └───────────┬──────┘  └─────────┬──────────┘   │  write-through · FIFO eviction       │ ║
-║              │                   │              │  single-flight coalescing            │ ║
-╠══════════════│═══════════════════│══════════════│══════════════════════════════════════╣ ║
-║  PHYSICAL    │                   │              └──────────────────┬───────────────────┘ ║
-║  STORAGE     ▼                   ▼                                 ▼                     ║
-║                                                                                          ║
-║  ┌───────────────────────────────────────┐   ┌────────────────────────────────────────┐  ║
-║  │  60 × HDD  (JBOD, XFS per disk)       │   │  NVMe SSD                              │  ║
-║  │  append-only pack-segments ≤ 2 GB     │   │  redb: CID → (seg, offset, len)        │  ║
-║  │  per-disk ZFS pool (ozd-zfs health)   │   │  CacheTier segments (SuperDisk)        │  ║
-║  │  ~480 TB usable при R=2               │   │  T_CURSOR · ballast.bin                │  ║
-║  └───────────────────────────────────────┘   └────────────────────────────────────────┘  ║
-║                                                                                          ║
-║  DDD-слои:  [Domain] ozd-domain  ·  [Application] ozd-app  ·  [Infra] ozd-engine         ║
-║             [Ports]  BlockStore · ShardEngine · PlacementPolicy  (traits, no I/O)        ║
-║             [Adapters] DiskEngine · ZfsRunner · CacheTier · S3Gateway · AdminRest        ║
-╚══════════════════════════════════════════════════════════════════════════════════════════╝
+╔════════════════════════════════════════════════════════════════════╗
+║         OPENZFS DAEMON · ARCHITECTURE-XFS VARIANT A                ║
+║         DDD + Hexagonal Architecture                               ║
+║         "Application owns placement, infrastructure owns storage"  ║
+╠════════════════════════════════════════════════════════════════════╣
+║                                                                    ║
+║                  Upstream Systems                                  ║
+║                                                                    ║
+║     IPFS Node (Kubo)              Admin/Ops                        ║
+║         │                              │                           ║
+║         └──────────────┬───────────────┘                           ║
+║                        │                                           ║
+║                        ▼                                           ║
+║     ┌──────────────────────────────────────────────┐               ║
+║     │      Application Layer (Pool)                │               ║
+║     │                                               │               ║
+║     │ put() → verify CID → placement(HRW) → replicate              ║
+║     │ get() → hedged read → pick fast replica                      ║
+║     │ delete() → discard set, two-phase cleanup                    ║
+║     │ gc() → discard ratio, CAS-move, rebalance                    ║
+║     │ scrub() → CID-verify, CRC check, cursor                      ║
+║     │ resilver() → walk add-only, rebuild R copies                 ║
+║     │ CacheTier (NVMe) → write-through, FIFO, self-heal            ║
+║     └──────────────────────┬───────────────────────┘               ║
+║                            │ Port: BlockStore                      ║
+║                            ▼                                       ║
+║     ┌──────────────────────────────────────────────┐               ║
+║     │            Core Domain (rich)                │               ║
+║     │                                               │               ║
+║     │ CID, Block, Pin, Piece, PlacementPolicy       │               ║
+║     │ IntegrityPolicy, GarbageCollector             │               ║
+║     │                                               │               ║
+║     │ Invariants: CID==hash(data), R copies,        │               ║
+║     │ HRW deterministic, no central catalog         │               ║
+║     └──────────────────────┬───────────────────────┘               ║
+║                            │ Port: ShardEngine                     ║
+║                            ▼                                       ║
+║     ┌──────────────────────────────────────────────┐               ║
+║     │          Adapter Layer                       │               ║
+║     │                                               │               ║
+║     │ DiskEngine → XFS per-disk pack-segments      │               ║
+║     │              redb index (CID→seg,off,len)    │               ║
+║     │              CRC32/zstd compression           │               ║
+║     │                                               │               ║
+║     │ ZfsRunner → health monitor, drift audit      │               ║
+║     │ CacheTier → NVMe read-leg, coalescing        │               ║
+║     └──────────────────────┬───────────────────────┘               ║
+║                            │                                       ║
+║                            ▼                                       ║
+║     ┌──────────────────────────────────────────────┐               ║
+║     │        Physical Storage (JBOD)               │               ║
+║     │                                               │               ║
+║     │ 60 × HDD (XFS, no RAID)                       │               ║
+║     │  • append-only pack-segments ≤2GB             │               ║
+║     │  • per-disk redb index                        │               ║
+║     │  • application manages replication (R=2)      │               ║
+║     │  • ~480TB usable with replication factor 2    │               ║
+║     │                                               │               ║
+║     │ 1 × NVMe (special tier)                       │               ║
+║     │  • centralized redb index                     │               ║
+║     │  • CacheTier segments (Discord-style)         │               ║
+║     │  • T_CURSOR checkpoints, ballast.bin          │               ║
+║     └──────────────────────────────────────────────┘               ║
+║                                                                    ║
+║ Key Architecture:                                                 ║
+║                                                                    ║
+║ ✓ No central catalog    (HRW placement, per-disk index)           ║
+║ ✓ App-level replication (write-quorum W:2, mirror vdev)           ║
+║ ✓ App-level integrity   (CID-verify on read, CRC checksums)       ║
+║ ✓ App-level resilience  (walk-based resilver on topology change) ║
+║ ✓ Erasure optional      (4+2 Reed-Solomon for space optimization) ║
+║                                                                    ║
+╚════════════════════════════════════════════════════════════════════╝
+```
 ```
 
 
