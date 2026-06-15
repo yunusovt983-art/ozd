@@ -137,7 +137,7 @@ CID ──► placement(CID, topology) ──► [ShardId₁ .. ShardId_R]   (to
 
 ## Документы
 
-Архитектура, планы, ADR, разборы 29 систем (TON, geth, YDB, RustFS, Discord, Kafka и др.)
+Архитектура, планы, ADR, разборы 29 систем, как они работают с файловой системой (TON, geth, YDB, RustFS, Discord, Kafka и др.)
 и 130+ объяснений методом Фейнмана — в **[Wiki/](Wiki/)**.
 
 ## Ubiquitous Language (термины ZFS как метафора)
