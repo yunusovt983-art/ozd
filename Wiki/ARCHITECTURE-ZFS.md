@@ -29,8 +29,8 @@
 ║  │ Physical Storage                                │
 ║  │ • NVMe: redb (CID index) + T_CURSOR checkpoints │
 ║  │ • 60 HDD: ZFS pool tank (mirror vdev)           │
-║  │   tank/blocks/: файлы по CID (ZFS-управляемые) │
-║  │   tank/index:   NVMe-маунт со своей redb       │
+║  │   tank/blocks/: файлы по CID (ZFS-управляемые)  │
+║  │   tank/index:   NVMe-маунт со своей redb        │
 ║  └─────────────────────────────────────────────────┘
 ║
 ║ KEY DIFFERENCE vs Variant A:
