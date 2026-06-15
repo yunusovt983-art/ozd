@@ -100,18 +100,46 @@ flowchart TB
 
 ### B3. Запись/чтение — демон пишет ОДНУ копию, ZFS зеркалит
 
+**Последовательность:**
+
 ```mermaid
 sequenceDiagram
     participant I as IPFS-демон
     participant S as ZfsBlockStore
-    participant Z as ZFS (tank)
+    participant Z as ZFS tank
     I->>S: put(block)
-    S->>S: verify(cid == hash)
-    S->>Z: write файл tank/blocks/<cid> (ОДНА копия)
-    Z-->>Z: mirror-vdev делает 2-ю копию сам
-    S->>Z: redb: CID -> путь (tank/index на NVMe)
-    S-->>I: Ok(cid)
-    Note over I,Z: read: redb lookup путь, read тела; ZFS-checksum гарантирует целостность; CID-verify опционален
+    S->>S: verify cid hash
+    S->>Z: write tank/blocks CID one copy
+    Z-->>Z: mirror-vdev copies to pair
+    S->>Z: redb index CID to path
+    S-->>I: Ok
+```
+
+**Детали:**
+
+```mermaid
+flowchart TD
+    PUT["put(block)<br/>IPFS-демон"] --> VER["ZfsBlockStore.verify<br/>cid == hash(data)"]
+    VER --> WR["write файл<br/>tank/blocks per CID<br/>ОДНА копия"]
+    WR --> MIR["ZFS mirror-vdev<br/>автоматически копирует<br/>на парный диск"]
+    MIR --> IDX["redb.put(CID, path)<br/>индекс на NVMe"]
+    IDX --> OK["return Ok(cid)"]
+    
+    OK --> SEP["---"]
+    SEP --> READ["get(cid)"]
+    READ --> LOOKUP["redb lookup<br/>найти path"]
+    LOOKUP --> CHECK{path есть<br/>в индексе?}
+    CHECK -->|да| PREAD["pread tank файл<br/>ZFS читает с mirror-vdev"]
+    CHECK -->|нет| SCAN["scan tank/blocks"]
+    PREAD --> ZCRC["ZFS-checksum<br/>гарантирует целостность"]
+    SCAN --> ZCRC
+    ZCRC --> OPTCRC{опц verify<br/>CID hash?}
+    OPTCRC -->|да| CRCV["hash block<br/>verify CID"]
+    OPTCRC -->|нет| RET["return block"]
+    CRCV --> RET
+    
+    style MIR fill:#c0ffc0
+    style ZCRC fill:#c0ffc0
 ```
 
 ### B4. Отказ диска → ZFS resilver (демон не участвует)
