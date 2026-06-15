@@ -92,7 +92,7 @@ flowchart TB
     POOL --> MDOTS["… ещё 28 mirror-vdev …"]
     POOL --> M30["mirror-29<br/>hdd58 + hdd59"]
     POOL --> SPEC["special mirror<br/>nvme0 + nvme1<br/>(ОБЯЗАТЕЛЬНО зеркало!)"]
-    POOL -. опц. .-> L2["cache: nvme2 (L2ARC)"]
+    POOL -. optional .-> L2["cache: nvme2 (L2ARC)"]
     M1 --> CAP["R=2, ~480 ТБ usable<br/>mirror-resilver = часы, не сутки"]
     classDef ssd fill:#eef,stroke:#557;
     class SPEC,L2 ssd;
