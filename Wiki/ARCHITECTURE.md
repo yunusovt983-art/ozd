@@ -607,7 +607,7 @@ sequenceDiagram
             SEG->>MET: flushOffset fsync
         end
     end
-    Note over A,MET: успех при W=2; сегмент 2GB max - ротация в следующий сегмент
+    Note over A,MET: успех при W=2; сегмент 2GB max, затем ротация в следующий сегмент
 ```
 
 
