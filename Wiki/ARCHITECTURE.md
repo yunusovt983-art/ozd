@@ -155,11 +155,11 @@ sequenceDiagram
     A->>P: select(cid, topology, R=2)
     P-->>A: [shard_r1, shard_r2]
     par запись на R дисков
-        A->>D1: append тела в pack-сегмент (XFS-HDD), адрес→redb/NVMe
+        A->>D1: append тела в pack-сегмент (XFS-HDD), адрес->redb/NVMe
     and
-        A->>D2: append в pack-сегмент, адрес→redb/NVMe
+        A->>D2: append в pack-сегмент, адрес->redb/NVMe
     end
-    Note over A,D2: успех при ≥ W=2 подтверждениях
+    Note over A,D2: успех при W>=2 подтверждениях
     A-->>I: Ok(cid)
 ```
 
@@ -607,7 +607,7 @@ sequenceDiagram
             SEG->>MET: flushOffset fsync
         end
     end
-    Note over A,MET: успех при W=2; сегмент >=2GB - ротация в следующий сегмент
+    Note over A,MET: успех при W=2; сегмент 2GB max - ротация в следующий сегмент
 ```
 
 
