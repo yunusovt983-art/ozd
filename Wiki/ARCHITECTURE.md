@@ -1,5 +1,68 @@
 # Architecture — OpenZFS Daemon (Часть 1) · Variant A (XFS)
 
+```
+╔══════════════════════════════════════════════════════════════════════════════════════════╗
+║          ozd — HELICOPTER VIEW  ·  Domain-Driven Design  ·  Hexagonal Architecture      ║
+╚══════════════════════════════════════════════════════════════════════════════════════════╝
+
+  ФИЛОСОФИЯ: домен не знает о дисках. Диски не знают о IPFS. Адаптеры склеивают.
+  ЦЕЛЬ: один IPFS-демон → единый BlockStore → физически 60 HDD + NVMe (JBOD, ADR-0001).
+
+╔══════════════════════════════════════════════════════════════════════════════════════════╗
+║  UPSTREAM (Generic)            DRIVING PORTS           CORE DOMAIN                      ║
+║                                                                                          ║
+║  ┌──────────────────────┐      ┌─────────────┐   ┌─────────────────────────────────┐    ║
+║  │   Kubo (IPFS daemon) │      │  BlockStore │   │       Block Storage CTX         │    ║
+║  │   go-ds-s3 plugin    │─────►│    port     │──►│  *** CORE DOMAIN ***            │    ║
+║  │   S3 API calls       │      │  (trait)    │   │                                 │    ║
+║  └──────────────────────┘      └─────────────┘   │  put(key, bytes)                │    ║
+║                                                  │  get(key) -> bytes              │    ║
+║  ┌──────────────────────┐      ┌─────────────┐   │  delete(key)                    │    ║
+║  │   Admin / Ops        │      │  AdminPort  │   │                                 │    ║
+║  │   curl /admin/*      │─────►│  (REST)     │──►│  Invariants:                    │    ║
+║  │   Prometheus scrape  │      └─────────────┘   │  · CID == hash(data) всегда     │    ║
+║  └──────────────────────┘                        │  · R копий на R разных дисках   │    ║
+║                                                  │  · без центрального каталога    │    ║
+╠══════════════════════════════════════════════════│  · placement детерминирован     ║    ║
+║  DRIVEN PORTS (secondary)                        └─────────────┬───────────────────┘    ║
+║                                                                │                         ║
+║  ┌───────────────────────────────────────────────┐            │  domain services         ║
+║  │           ShardEngine port (trait)            │◄───────────┘                         ║
+║  │  put / get / delete / capacity / gc / scrub   │  Pool implements:                    ║
+║  │  resilver / scan_segment / stat_obj           │  · HRW placement (free-weight)       ║
+║  └───────────┬───────────────────┬───────────────┘  · R=2 mirror / erasure 4+2         ║
+║              │                   │                   · write-quorum W=2                 ║
+║              │                   │                   · hedged read + handoff            ║
+║  ┌───────────▼──────┐  ┌─────────▼──────────┐        · GC · Scrub · Resilver           ║
+║  │  DiskEngine      │  │  ZfsRunner         │        · HealQueue · BgThrottle           ║
+║  │  (ozd-engine)    │  │  (ozd-zfs)         │        · DiskSlowMonitor · RollingP99     ║
+║  │                  │  │                    │                                            ║
+║  │ pack-segs ≤2GB   │  │ zpool status       │                                           ║
+║  │ redb CID-index   │  │ HealthFsm 4-state  │                                           ║
+║  │ CRC32 / zstd     │  │ Properties+Source  │                                           ║
+║  │ addr v3 (36B)    │  │ drift-audit        │  ┌──────────────────────────────────────┐ ║
+║  │ ballast / WAL-fo │  │ user-props ozd:*   │  │  CacheTier — SuperDisk (E25)         │ ║
+║  │ fadvise DONTNEED │  │ freeing→eff_free   │  │  NVMe read-leg (Discord-style)       │ ║
+║  └───────────┬──────┘  └─────────┬──────────┘  │  write-through · FIFO eviction       │ ║
+║              │                   │              │  single-flight coalescing            │ ║
+╠══════════════│═══════════════════│══════════════│══════════════════════════════════════╣ ║
+║  PHYSICAL    │                   │              └──────────────────┬───────────────────┘ ║
+║  STORAGE     ▼                   ▼                                 ▼                     ║
+║                                                                                          ║
+║  ┌───────────────────────────────────────┐   ┌────────────────────────────────────────┐  ║
+║  │  60 × HDD  (JBOD, XFS per disk)      │   │  NVMe SSD                              │  ║
+║  │  append-only pack-segments ≤ 2 GB    │   │  redb: CID → (seg, offset, len)        │  ║
+║  │  per-disk ZFS pool (ozd-zfs health)  │   │  CacheTier segments (SuperDisk)        │  ║
+║  │  ~480 TB usable при R=2              │   │  T_CURSOR · ballast.bin                │  ║
+║  └───────────────────────────────────────┘   └────────────────────────────────────────┘  ║
+║                                                                                          ║
+║  DDD-слои:  [Domain] ozd-domain  ·  [Application] ozd-app  ·  [Infra] ozd-engine        ║
+║             [Ports]  BlockStore · ShardEngine · PlacementPolicy  (traits, no I/O)       ║
+║             [Adapters] DiskEngine · ZfsRunner · CacheTier · S3Gateway · AdminRest       ║
+╚══════════════════════════════════════════════════════════════════════════════════════════╝
+```
+
+
 DDD + гексагональная архитектура (ports & adapters). Цель Части 1: **один IPFS-демон,
 blockstore которого физически распределён (sharded) по нескольким дискам**, но логически —
 единый. Документ проектирует это от домена к инфраструктуре.
