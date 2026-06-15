@@ -18,52 +18,52 @@
 ║                        ▼                                           ║
 ║     ┌──────────────────────────────────────────────┐               ║
 ║     │         ZfsBlockStore Application            │               ║
-║     │                                               │               ║
+║     │                                              │               ║
 ║     │ put(block) → verify CID → write tank/blocks  │               ║
 ║     │ get(cid) → redb lookup → read tank/ + verify │               ║
 ║     │ delete(cid) → unlink tank/ + redb cleanup    │               ║
 ║     │ gc() → ZFS GC, redb index maintenance        │               ║
-║     │ scrub() → ZFS checksums, optionally CID-verify│              ║
+║     │ scrub() → ZFS checksums,optionally CID-verify│               ║
 ║     └──────────────────────┬───────────────────────┘               ║
 ║                            │ Port: BlockStore trait                ║
 ║                            ▼                                       ║
 ║     ┌──────────────────────────────────────────────┐               ║
 ║     │            Core Domain (minimal)             │               ║
-║     │                                               │               ║
-║     │ CID, Block, Pin, IntegrityPolicy              │               ║
-║     │ (semantic layer, format-agnostic)             │               ║
+║     │                                              │               ║
+║     │ CID, Block, Pin, IntegrityPolicy             │               ║
+║     │ (semantic layer, format-agnostic)            │               ║
 ║     └──────────────────────┬───────────────────────┘               ║
 ║                            │ Port: ZfsShardEngine                  ║
 ║                            ▼                                       ║
 ║     ┌──────────────────────────────────────────────┐               ║
 ║     │          Adapter Layer (ZFS, redb)           │               ║
-║     │                                               │               ║
+║     │                                              │               ║
 ║     │ ZfsRunner → `zfs` CLI, HealthFsm (4 states)  │               ║
 ║     │ redbIndex → CID ↔ path lookup (NVMe)         │               ║
-║     │ Indexer → crawl tank/ on startup              │               ║
+║     │ Indexer → crawl tank/ on startup             │               ║
 ║     └──────────────────────┬───────────────────────┘               ║
 ║                            │                                       ║
 ║                            ▼                                       ║
 ║     ┌──────────────────────────────────────────────┐               ║
 ║     │        OpenZFS Substrate (tank pool)         │               ║
-║     │                                               │               ║
-║     │ 30× mirror vdev (HDD pairs)                   │               ║
+║     │                                              │               ║
+║     │ 30× mirror vdev (HDD pairs)                  │               ║
 ║     │ + special vdev (NVMe: redb + T_CURSOR)       │               ║
-║     │                                               │               ║
-║     │ ZFS manages:                                  │               ║
-║     │  • Checksum (detect bit-rot)                  │               ║
-║     │  • Mirror (replicate to pair)                 │               ║
-║     │  • Self-heal (corrupt block → read from pair) │               ║
-║     │  • Resilver (rebuild on disk failure)         │               ║
-║     │  • ARC L2ARC caching                          │               ║
-║     │  • Snapshots, compression                     │               ║
+║     │                                              │               ║
+║     │ ZFS manages:                                 │               ║
+║     │  • Checksum (detect bit-rot)                 │               ║
+║     │  • Mirror (replicate to pair)                │               ║
+║     │  • Self-heal(corrupt block → read from pair) │               ║
+║     │  • Resilver (rebuild on disk failure)        │               ║
+║     │  • ARC L2ARC caching                         │               ║
+║     │  • Snapshots, compression                    │               ║
 ║     └──────────────────────────────────────────────┘               ║
 ║                                                                    ║
-║ Key Delegation:                                                   ║
+║ Key Delegation:                                                    ║
 ║                                                                    ║
-║ ✓ App handles:      IPFS semantics, CID-to-block mapping         ║
-║ ✓ ZFS handles:      Durability, integrity, replication, recovery  ║
-║ ✓ Index (redb):     Fast CID → path lookup (in-memory + NVMe)    ║
+║ ✓ App handles:      IPFS semantics, CID-to-block mapping        т  ║
+║ ✓ ZFS handles:      Durability, integrity, replication, recovery   ║
+║ ✓ Index (redb):     Fast CID → path lookup (in-memory + NVMe)      ║
 ║                                                                    ║
 ╚════════════════════════════════════════════════════════════════════╝
 ```
@@ -72,33 +72,33 @@
 
 ```
 ╔══ ozd — ZFS VARIANT (brief) ══════════════════════════════════════╗
-║ ФИЛОСОФИЯ: ZFS = substratum; демон = индекс + IPFS/S3 логика    ║
-║                                                                  ║
-║  [Upstream: Kubo+Admin]                                          ║
-║           ↓ BlockStore trait                                     ║
-║  ┌────────────────────────────────────────────────────┐          ║
-║  │ Core Domain (тонкий)                              │          ║
-║  │ • put: verify CID → write tank/blocks → index     │          ║
-║  │ • get: lookup redb → read tank/ → ZFS-checksum   │          ║
-║  │ • delete: unlink tank/ + redb-cleanup             │          ║
-║  └────────────────────────────┬─────────────────────┘           ║
-║           ↓ ZfsShardEngine port                                  ║
-║  ┌────────────────────────────────────────────────────┐          ║
-║  │ Adapters                                           │          ║
-║  │ • ZfsRunner: `zfs` CLI, HealthFsm (4 states)     │          ║
-║  │ • redbIndex: CID ↔ path lookup (NVMe)            │          ║
-║  │ • Indexer: crawl tank/ on startup                │          ║
-║  └────────────────────────────┬─────────────────────┘           ║
-║           ↓                                                      ║
-║  ┌────────────────────────────────────────────────────┐          ║
-║  │ OpenZFS Substrate (tank pool)                     │          ║
-║  │ • 30× mirror vdev (HDD pairs)                      │          ║
-║  │ • special vdev (NVMe: redb + T_CURSOR)            │          ║
-║  │ • ZFS: checksum, mirror, resilver, ARC/L2ARC      │          ║
-║  └────────────────────────────────────────────────────┘          ║
-║                                                                  ║
-║ Делегирование: ZFS—durability, демон—semantics                  ║
-╚══════════════════════════════════════════════════════════════════╝
+║ ФИЛОСОФИЯ: ZFS = substratum; демон = индекс + IPFS/S3 логика      ║
+║                                                                   ║
+║  [Upstream: Kubo+Admin]                                           ║
+║           ↓ BlockStore trait                                      ║
+║  ┌────────────────────────────────────────────────────┐           ║
+║  │ Core Domain (тонкий)                               │           ║
+║  │ • put: verify CID → write tank/blocks → index      │           ║
+║  │ • get: lookup redb → read tank/ → ZFS-checksum     │           ║
+║  │ • delete: unlink tank/ + redb-cleanup              │           ║
+║  └────────────────────────────┬───────────────────────┘           ║
+║           ↓ ZfsShardEngine port                                   ║
+║  ┌────────────────────────────────────────────────────┐           ║
+║  │ Adapters                                           │           ║
+║  │ • ZfsRunner: `zfs` CLI, HealthFsm (4 states)       │           ║
+║  │ • redbIndex: CID ↔ path lookup (NVMe)              │           ║
+║  │ • Indexer: crawl tank/ on startup                  │           ║
+║  └────────────────────────────┬───────────────────────┘           ║
+║           ↓                                                       ║
+║  ┌────────────────────────────────────────────────────┐           ║
+║  │ OpenZFS Substrate (tank pool)                      │           ║
+║  │ • 30× mirror vdev (HDD pairs)                      │           ║
+║  │ • special vdev (NVMe: redb + T_CURSOR)             │           ║
+║  │ • ZFS: checksum, mirror, resilver, ARC/L2ARC       │           ║
+║  └────────────────────────────────────────────────────┘           ║
+║                                                                   ║
+║ Делегирование: ZFS—durability, демон—semantics                    ║
+╚═══════════════════════════════════════════════════════════════════╝
 ```
 
 > Альтернатива основной [ARCHITECTURE.md](ARCHITECTURE.md) (Variant A: XFS + app-репликация).
