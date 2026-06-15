@@ -530,22 +530,23 @@ flowchart TB
 sequenceDiagram
     participant A as StoreBlock
     participant P as Placement
-    participant WB as write-буфер (RAM, per-disk)
-    participant SEG as seg.0001.dat (XFS-HDD)
-    participant RDB as diskNN.redb (NVMe)
-    participant MET as seg.0001.meta
-    A->>A: verify(cid == hash(data))
-    A->>P: select(cid, topology, R=2) → [d_r1, d_r2]
-    loop для каждой реплики (параллельно)
+    participant WB as WriteBuffer
+    participant SEG as SegmentFile
+    participant RDB as redbIndex
+    participant MET as SegmentMeta
+    A->>A: verify cid == hash(data)
+    A->>P: select(cid, topology, R=2)
+    loop для каждой реплики параллельно
         A->>WB: положить блок в буфер диска
-        alt буфер полон ИЛИ fsync-порог (N элем. / T сек)
+        alt буфер полон или fsync-порог
             WB->>SEG: append батч тел в активный сегмент
-            WB->>RDB: put CID → (seg_id, offset, len)
-            SEG->>MET: flushOffset (fsync)
+            WB->>RDB: put CID, seg_id, offset, len
+            SEG->>MET: flushOffset fsync
         end
     end
-    Note over A,MET: успех при ≥ W=2; сегмент ≥2ГБ → ротация в seg.0002.dat
+    Note over A,MET: успех при W=2; сегмент >=2GB - ротация в следующий сегмент
 ```
+
 
 #### FS3. Чтение блока (FetchBlock) по файлам
 
