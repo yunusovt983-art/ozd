@@ -24,8 +24,8 @@
                         │   go-ds-s3 S3 plugin    │
                         └────────────┬────────────┘
                                      │ HTTP S3 API + SigV4
-╔════════════════════════╗            ▼           ╔═════════════════════════╗
-║ ozd-ipfs               ║◄───────────────────────►║ ozd-admin              ║
+╔════════════════════════╗           ▼            ╔═════════════════════════╗
+║ ozd-ipfs               ║◄──────────────────────►║ ozd-admin               ║
 ║ S3 gateway (axum)      ║  ozd-daemon (binary)   ║ REST /admin/*           ║
 ║ SigV4 auth (E13)       ║  tokio runtime         ║ GC · Scrub · Resilver   ║
 ║ Range GET / suffix     ║  config.toml           ║ CAR import/export       ║
