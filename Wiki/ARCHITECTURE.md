@@ -31,7 +31,7 @@
 ║  │  put / get / delete / capacity / gc / scrub   │  Pool implements:                     ║
 ║  │  resilver / scan_segment / stat_obj           │  · HRW placement (free-weight)        ║
 ║  └───────────┬───────────────────┬───────────────┘  · R=2 mirror / erasure 4+2           ║
-║              │                   │                   · write-quorum W=2                  ║
+║              │                   │                   · write-quorum W:2                  ║
 ║              │                   │                   · hedged read + handoff             ║
 ║  ┌───────────▼──────┐  ┌─────────▼──────────┐        · GC · Scrub · Resilver             ║
 ║  │  DiskEngine      │  │  ZfsRunner         │        · HealQueue · BgThrottle            ║
@@ -159,7 +159,7 @@ sequenceDiagram
     and
         A->>D2: append в pack-сегмент, адрес->redb/NVMe
     end
-    Note over A,D2: успех при W=2 подтверждениях (write-quorum)
+    Note over A,D2: успех при W:2 подтверждениях (write-quorum)
     A-->>I: Ok(cid)
 ```
 
@@ -239,7 +239,7 @@ flowchart LR
 - цель самоисцеления: для каждого блока поддерживать R здоровых копий (resilver).
 
 > `replication_factor` (R) и `write_quorum` (W) — параметры пула в конфиге. По умолчанию
-> R=2, W=2 (как mirror). Реплики обязаны лежать на разных физических дисках (а в идеале —
+> R=2, W:2 (как mirror). Реплики обязаны лежать на разных физических дисках (а в идеале —
 > в разных failure domains; в Части 1 достаточно «разные диски»).
 
 #### Entity — `Shard` (= один диск, vdev)
@@ -607,7 +607,7 @@ sequenceDiagram
             SEG->>MET: flushOffset fsync
         end
     end
-    Note over A,MET: успех при W=2; сегмент 2GB max, затем ротация в следующий сегмент
+    Note over A,MET: успех при W:2; сегмент ротируется при переполнении
 ```
 
 
@@ -659,7 +659,7 @@ flowchart TB
   место** (фон-GC/scrub вернёт), данные целых блоков не повреждены. Без отдельного recovery-лога;
   усиливает `flushOffset`, манифест и two-phase-delete.
 - **★ Durability через репликацию, не fsync-на-запись (Kafka):** не fsync'ить каждый блок (дорого на
-  HDD) — durability обеспечивают **R=2 (W=2) реплики + recovery-point + per-micro CRC + torn-tail**
+  HDD) — durability обеспечивают **R=2 (W:2) реплики + recovery-point + per-micro CRC + torn-tail**
   (`flushOffset`/eof). fsync — **на seal сегмента / периодически** (`fsync_policy: per-write|on-seal|
   periodic`); **clean-shutdown marker** → при чистом стопе recovery почти не нужен, иначе re-validate
   **только грязный хвост** после recovery-point (не все 3,8 млрд). Выигрыш — throughput записи на 60 HDD.
@@ -866,7 +866,7 @@ flowchart TB
   кэш-спред по дискам; потеря локального диска → перекачать из deep-storage (Часть 3).
 - **Read-кэш в RAM + опц. NVMe L2-кэш тел** (паттерн RocksDB SecondaryCache) + ретраи при
   удалённом fetch (паттерн Quorum) — снижают повторные обращения к HDD/сети.
-- **Репликация (mirror):** R копий на R разных дисках; write-quorum W. По умолчанию R=2, W=2.
+- **Репликация (mirror):** R копий на R разных дисках; write-quorum W. По умолчанию R=2, W:2.
   Это даёт устойчивость к потере (R−W+1) дисков на запись и к потере (R−1) дисков на чтение
   блока. **Erasure coding — Часть 2**, главный кандидат **YDB block-4-2** (4+2: переживает 2
   отказа при **1.5×** overhead vs 3× у R=3); raw-block-device бэкенд (как PDisk YDB) — тоже Часть 2.
@@ -917,7 +917,7 @@ openzfs-daemon/
    Движок `ShardEngine` = data-tier (pack-сегменты, XFS-HDD) + index-tier (redb на NVMe);
    формат сегментов — [SYNTHESIS](Arch_DDD/HDD_SDD/STORAGE-IDEAS-SYNTHESIS.md).
 4. **Репликация:** **в Часть 1** — R копий (mirror), write-quorum W, walk-based `ResilverService`.
-   **R=2, W=2** (диски одинаковой ёмкости). Erasure coding/RAIDZ — Часть 2.
+   **R=2, W:2** (диски одинаковой ёмкости). Erasure coding/RAIDZ — Часть 2.
 5. **Топология:** один сервер, 60 одинаковых HDD (§8).
 
 ### Остаётся решить позже (не блокирует старт)
