@@ -68,6 +68,39 @@
 ╚════════════════════════════════════════════════════════════════════╝
 ```
 
+### Краткая схема (терминология)
+
+```
+╔══ ozd — ZFS VARIANT (brief) ══════════════════════════════════════╗
+║ ФИЛОСОФИЯ: ZFS = substratum; демон = индекс + IPFS/S3 логика    ║
+║                                                                  ║
+║  [Upstream: Kubo+Admin]                                          ║
+║           ↓ BlockStore trait                                     ║
+║  ┌────────────────────────────────────────────────────┐          ║
+║  │ Core Domain (тонкий)                              │          ║
+║  │ • put: verify CID → write tank/blocks → index     │          ║
+║  │ • get: lookup redb → read tank/ → ZFS-checksum   │          ║
+║  │ • delete: unlink tank/ + redb-cleanup             │          ║
+║  └────────────────────────────┬─────────────────────┘           ║
+║           ↓ ZfsShardEngine port                                  ║
+║  ┌────────────────────────────────────────────────────┐          ║
+║  │ Adapters                                           │          ║
+║  │ • ZfsRunner: `zfs` CLI, HealthFsm (4 states)     │          ║
+║  │ • redbIndex: CID ↔ path lookup (NVMe)            │          ║
+║  │ • Indexer: crawl tank/ on startup                │          ║
+║  └────────────────────────────┬─────────────────────┘           ║
+║           ↓                                                      ║
+║  ┌────────────────────────────────────────────────────┐          ║
+║  │ OpenZFS Substrate (tank pool)                     │          ║
+║  │ • 30× mirror vdev (HDD pairs)                      │          ║
+║  │ • special vdev (NVMe: redb + T_CURSOR)            │          ║
+║  │ • ZFS: checksum, mirror, resilver, ARC/L2ARC      │          ║
+║  └────────────────────────────────────────────────────┘          ║
+║                                                                  ║
+║ Делегирование: ZFS—durability, демон—semantics                  ║
+╚══════════════════════════════════════════════════════════════════╝
+```
+
 > Альтернатива основной [ARCHITECTURE.md](ARCHITECTURE.md) (Variant A: XFS + app-репликация).
 > Выбор между ними — [ADR 0001](adr/0001-storage-substrate.md). Здесь — **«философия ZFS»**:
 > пулинг, избыточность, целостность, кэш и компрессию отдаём OpenZFS, а демон сводим к

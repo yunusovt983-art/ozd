@@ -75,8 +75,41 @@
 ║                                                                    ║
 ╚════════════════════════════════════════════════════════════════════╝
 ```
-```
 
+### Краткая схема (терминология)
+
+```
+╔══ ozd — XFS VARIANT A (brief) ════════════════════════════════════╗
+║ ФИЛОСОФИЯ: домен ≠ диски; диски ≠ IPFS; адаптеры склеивают       ║
+║                                                                  ║
+║  [Upstream: Kubo+Admin]                                          ║
+║           ↓ BlockStore trait                                     ║
+║  ┌────────────────────────────────────────────────────┐          ║
+║  │ Core Domain (Pool)                                 │          ║
+║  │ • put: verify CID → placement(HRW) → replicate     │          ║
+║  │ • get: hedged read → pick fast replica             │          ║
+║  │ • delete: discard set, two-phase cleanup           │          ║
+║  │ • gc/scrub/resilver: all app-level                 │          ║
+║  └────────────────────────┬─────────────────────────┘           ║
+║           ↓ ShardEngine port                                     ║
+║  ┌────────────────────────────────────────────────────┐          ║
+║  │ Adapters                                           │          ║
+║  │ • DiskEngine: pack-segs ≤2GB, redb index (CID→loc)│          ║
+║  │ • ZfsRunner: health monitor, drift audit          │          ║
+║  │ • CacheTier: NVMe read-leg, Discord SuperDisk     │          ║
+║  └────────────────────────┬─────────────────────────┘           ║
+║           ↓                                                      ║
+║  ┌────────────────────────────────────────────────────┐          ║
+║  │ Physical (JBOD, 60 HDD + 1 NVMe)                  │          ║
+║  │ • XFS per disk, append-only segments               │          ║
+║  │ • per-disk redb + centralized index                │          ║
+║  │ • app manages R=2 replication + resilience         │          ║
+║  │ • ~480TB usable                                    │          ║
+║  └────────────────────────────────────────────────────┘          ║
+║                                                                  ║
+║ Инварианты: CID==hash, R копий, HRW, no central catalog         ║
+╚══════════════════════════════════════════════════════════════════╝
+```
 
 DDD + гексагональная архитектура (ports & adapters). Цель Части 1: **один IPFS-демон,
 blockstore которого физически распределён (sharded) по нескольким дискам**, но логически —
