@@ -590,24 +590,21 @@ flowchart TB
 #### FS2. Запись блока (StoreBlock) на уровне файлов
 
 ```mermaid
-sequenceDiagram
-    participant A as StoreBlock
-    participant P as Placement
-    participant WB as WriteBuffer
-    participant SEG as SegmentFile
-    participant RDB as redbIndex
-    participant MET as SegmentMeta
-    A->>A: verify cid == hash(data)
-    A->>P: select(cid, topology, R=2)
-    loop для каждой реплики параллельно
-        A->>WB: положить блок в буфер диска
-        alt буфер полон или fsync-порог
-            WB->>SEG: append батч тел в активный сегмент
-            WB->>RDB: put CID, seg_id, offset, len
-            SEG->>MET: flushOffset fsync
-        end
-    end
-    Note over A,MET: успех при W:2; сегмент ротируется при переполнении
+flowchart TD
+    START["put block<br/>StoreBlock"] --> VERIFY["verify: cid == hash(data)"]
+    VERIFY --> PLACE["placement(cid, topology, R=2)"]
+    PLACE --> LOOP["for each replica r1, r2 do"]
+    LOOP --> WB1["WriteBuffer.put(block)<br/>буфер диска r1"]
+    LOOP --> WB2["WriteBuffer.put(block)<br/>буфер диска r2"]
+    WB1 --> CHECK1{буфер полон<br/>или fsync?}
+    WB2 --> CHECK2{буфер полон<br/>или fsync?}
+    CHECK1 --> FLUSH1["flush: SEG.append(batch)<br/>RDB.put(CID, seg, offset, len)<br/>fsync SegmentMeta"]
+    CHECK2 --> FLUSH2["flush: SEG.append(batch)<br/>RDB.put(CID, seg, offset, len)<br/>fsync SegmentMeta"]
+    FLUSH1 --> QUORUM["write quorum: W:2<br/>success when 2 replicas ack"]
+    FLUSH2 --> QUORUM
+    QUORUM --> RETURN["return Ok(cid)"]
+    style QUORUM fill:#c0ffc0
+    style RETURN fill:#fff9c0
 ```
 
 
