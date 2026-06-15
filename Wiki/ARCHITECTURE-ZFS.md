@@ -111,7 +111,7 @@ sequenceDiagram
     Z-->>Z: mirror-vdev делает 2-ю копию сам
     S->>Z: redb: CID -> путь (tank/index на NVMe)
     S-->>I: Ok(cid)
-    Note over I,Z: read: redb -> путь -> read; ZFS-checksum гарантирует целостность; CID-verify опционален
+    Note over I,Z: read: redb lookup путь, read тела; ZFS-checksum гарантирует целостность; CID-verify опционален
 ```
 
 ### B4. Отказ диска → ZFS resilver (демон не участвует)
