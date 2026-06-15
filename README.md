@@ -1,5 +1,11 @@
 # OpenZFS Daemon
 
+> **Делаем аналог [Discord SuperDisk](https://discord.com/blog/how-discord-supercharges-network-disks-for-extreme-low-latency)** —
+> NVMe read-leg поверх 60 HDD: все чтения по скорости NVMe, durability через репликацию на HDD.
+> Discord: md RAID1 (RAID0×4 NVMe + Persistent Disk `write-mostly`) → iowait ÷2, p99 чтений 15мс.
+> Наш подход: app-уровень (`CacheTier` на Rust) — write-through на NVMe + single-flight coalescing +
+> self-heal с пула при битом секторе кэша. Бенч: EC 4+2 с кэшем = 0.08мс p50 (без кэша = 0.40мс).
+
 > Кодовое имя проекта. По сути это **IPFS-демон с пуловым (ZFS-подобным) sharded-блокстором**:
 > много физических дисков объединяются в один логический blockstore, как vdev'ы в zpool.
 
