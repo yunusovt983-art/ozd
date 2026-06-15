@@ -589,6 +589,32 @@ flowchart TB
 
 #### FS2. Запись блока (StoreBlock) на уровне файлов
 
+**Последовательность:**
+
+```mermaid
+sequenceDiagram
+    participant A as StoreBlock
+    participant P as Placement
+    participant WB as WriteBuffer
+    participant SEG as SegmentFile
+    participant RDB as redbIndex
+    A->>A: verify cid hash
+    A->>P: select(cid, topology, R=2)
+    par реплика 1
+        A->>WB: put block r1
+        WB->>SEG: append сегмент
+        SEG->>RDB: put(CID, seg_id, offset)
+    and реплика 2
+        A->>WB: put block r2
+        WB->>SEG: append сегмент
+        SEG->>RDB: put(CID, seg_id, offset)
+    end
+    A-->>A: W:2 подтверждений получено
+    A-->>A: OK
+```
+
+**Детали логики:**
+
 ```mermaid
 flowchart TD
     START["put block<br/>StoreBlock"] --> VERIFY["verify: cid == hash(data)"]
