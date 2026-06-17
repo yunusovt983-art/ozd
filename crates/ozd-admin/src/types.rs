@@ -195,3 +195,11 @@ pub struct RuntimeConfig {
     pub adaptive_hedge: bool,
     pub blake3_outboard: bool,
 }
+
+/// W31: retention response.
+#[derive(Serialize)]
+pub struct SnapshotRetentionResponse {
+    pub kept: usize,
+    pub deleted: usize,
+    pub deleted_ids: Vec<String>,
+}

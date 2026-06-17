@@ -57,6 +57,7 @@ pub fn router(
         .route("/admin/capacity", get(capacity_report))
         .route("/admin/snapshot", post(create_snapshot).delete(delete_snapshot))
         .route("/admin/snapshots", get(list_snapshots))
+        .route("/admin/snapshot/old", axum::routing::delete(delete_old_snapshots))
         .route("/admin/config", get(get_config))
         .route("/metrics", get(metrics))
         .with_state(AdminState { shards, pool, gc_discard_ratio, zfs, data_paths, snapshot_dir, runtime_config })
@@ -656,6 +657,60 @@ async fn delete_snapshot(
         Ok(Ok(r)) => axum::Json(r).into_response(),
         Ok(Err(msg)) => (axum::http::StatusCode::NOT_FOUND,
             axum::Json(types::ErrorResponse::new(msg))).into_response(),
+        Err(e) => axum::Json(types::ErrorResponse::new(e)).into_response(),
+    }
+}
+
+/// W31: DELETE /admin/snapshot/old?keep=N — удалить все snapshot'ы кроме N последних.
+async fn delete_old_snapshots(
+    State(st): State<AdminState>,
+    Query(q): Query<HashMap<String, String>>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let keep: usize = match q.get("keep").and_then(|s| s.parse().ok()) {
+        Some(k) if k >= 1 => k,
+        _ => {
+            return (axum::http::StatusCode::BAD_REQUEST,
+                axum::Json(types::ErrorResponse::new("keep parameter required (>=1)"))).into_response();
+        }
+    };
+    let data_paths = st.data_paths.clone();
+    let snapshot_dir = st.snapshot_dir.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        let snap_root = snap_root_for(&snapshot_dir, &data_paths[0]);
+        let rd = match std::fs::read_dir(&snap_root) {
+            Ok(r) => r,
+            Err(_) => return types::SnapshotRetentionResponse { kept: 0, deleted: 0, deleted_ids: vec![] },
+        };
+        let mut ids: Vec<String> = rd
+            .flatten()
+            .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        ids.sort();
+        if ids.len() <= keep {
+            return types::SnapshotRetentionResponse { kept: ids.len(), deleted: 0, deleted_ids: vec![] };
+        }
+        let to_delete = &ids[..ids.len() - keep];
+        let mut deleted_ids = Vec::new();
+        for id in to_delete {
+            for (i, dp) in data_paths.iter().enumerate() {
+                let snap_dir = snap_path_for(&snapshot_dir, dp, id, i);
+                if snap_dir.is_dir() {
+                    let _ = std::fs::remove_dir_all(&snap_dir);
+                }
+            }
+            deleted_ids.push(id.clone());
+        }
+        types::SnapshotRetentionResponse {
+            kept: keep,
+            deleted: deleted_ids.len(),
+            deleted_ids,
+        }
+    })
+    .await;
+    match res {
+        Ok(r) => axum::Json(r).into_response(),
         Err(e) => axum::Json(types::ErrorResponse::new(e)).into_response(),
     }
 }
