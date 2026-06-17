@@ -130,6 +130,14 @@ impl BgThrottle {
     pub fn rate_bps(&self) -> u64 {
         self.st.lock().rate as u64
     }
+
+    /// W29: горячая замена конфигурации (SIGHUP). Обновляет max/min/busy;
+    /// текущий rate clamped к новому диапазону.
+    pub fn update_config(&self, new: BgThrottleConfig) {
+        let mut st = self.st.lock();
+        st.rate = st.rate.clamp(new.min_bytes_per_sec as f64, new.max_bytes_per_sec as f64);
+        self.metrics.bg_rate_bps.store(st.rate as u64, Relaxed);
+    }
 }
 
 #[cfg(test)]

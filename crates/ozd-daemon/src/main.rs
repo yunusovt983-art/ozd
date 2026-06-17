@@ -828,6 +828,45 @@ async fn main() -> Result<()> {
         .with_context(|| format!("binding {}", cfg.listen))?;
     tracing::info!(addr = %cfg.listen, "ozd S3-gateway listening (point Kubo go-ds-s3 here)");
 
+    // W29: SIGHUP → hot-reload конфигурации (bg_max, bg_min)
+    {
+        let cfg_path_reload = cfg_path.clone();
+        let bg_reload = pool.bg();
+        tokio::spawn(async move {
+            use tokio::signal::unix::{signal, SignalKind};
+            let mut hup = signal(SignalKind::hangup()).expect("SIGHUP handler");
+            loop {
+                hup.recv().await;
+                tracing::info!("SIGHUP received — reloading config");
+                let raw = match std::fs::read_to_string(&cfg_path_reload) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        tracing::warn!(err = %e, "config reload: read failed");
+                        continue;
+                    }
+                };
+                let new_cfg: Config = match toml::from_str(&raw) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        tracing::warn!(err = %e, "config reload: parse failed");
+                        continue;
+                    }
+                };
+                bg_reload.update_config(ozd_app::throttle::BgThrottleConfig {
+                    max_bytes_per_sec: new_cfg.bg_max_bytes_per_sec,
+                    min_bytes_per_sec: new_cfg.bg_min_bytes_per_sec,
+                    fg_busy_ops_per_sec: new_cfg.bg_fg_busy_ops,
+                });
+                tracing::info!(
+                    bg_max = new_cfg.bg_max_bytes_per_sec,
+                    bg_min = new_cfg.bg_min_bytes_per_sec,
+                    bg_busy = new_cfg.bg_fg_busy_ops,
+                    "config reloaded"
+                );
+            }
+        });
+    }
+
     // W21: graceful shutdown v2 — drain in-flight, timeout 30s, flush
     let pool_for_shutdown = pool.clone();
     axum::serve(listener, app)
