@@ -311,13 +311,13 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 ## Неделя 5 (15–21 июля 2026)
 
-### Арка W19 — Admin API: typed responses с derive(Serialize) (2 дня)
+### Арка W19 — Admin API: typed responses с derive(Serialize) ✅
 
 | Задача | Файл | Описание | Статус |
 |--------|------|----------|--------|
-| W19.1 | ozd-admin/src/types.rs | Создать модуль response-типов: `GcResponse`, `ScrubResponse`, `ResilverResponse`, `UsageResponse` с `#[derive(Serialize)]` | ⬜ |
-| W19.2 | ozd-admin/src/lib.rs | Переписать хэндлеры gc/scrub/resilver/usage на `axum::Json<T>` вместо format!-строк | ⬜ |
-| W19.3 | ozd-admin/src/lib.rs | Убрать `serde_json_like` модуль — больше не нужен | ⬜ |
+| W19.1 | ozd-admin/src/types.rs | 13 typed structs с derive(Serialize) | ✅ |
+| W19.2 | ozd-admin/src/lib.rs | Все 12 хэндлеров на `axum::Json<T>` | ✅ |
+| W19.3 | ozd-admin/src/lib.rs | `serde_json_like` + `json_escape` + `json_err` удалены | ✅ |
 
 **Критерий:** все /admin/ ответы через `axum::Json<T>`, типы автоматически сериализуются; ручной format! JSON удалён.
 
