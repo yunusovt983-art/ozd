@@ -64,8 +64,8 @@ async fn run_scrub(
                 "{{\"shard\":{i},\"checked\":{},\"corrupt\":{},\"repaired\":{},\"unrepairable\":{}}}",
                 r.checked, r.corrupt, r.repaired, r.unrepairable
             )),
-            Ok(Err(e)) => out.push(format!("{{\"shard\":{i},\"error\":\"{e}\"}}")),
-            Err(e) => out.push(format!("{{\"shard\":{i},\"error\":\"{e}\"}}")),
+            Ok(Err(e)) => out.push(json_shard_err(i, &e)),
+            Err(e) => out.push(json_shard_err(i, &e)),
         }
     }
     serde_json_like::Value(format!("[{}]", out.join(",")))
@@ -87,8 +87,8 @@ async fn zfs_scrub(
         let r = tokio::task::spawn_blocking(move || zp.scrub_start()).await;
         match r {
             Ok(Ok(())) => out.push(format!("{{\"shard\":{i},\"scrub\":\"started\"}}")),
-            Ok(Err(e)) => out.push(format!("{{\"shard\":{i},\"error\":\"{e}\"}}")),
-            Err(e) => out.push(format!("{{\"shard\":{i},\"error\":\"{e}\"}}")),
+            Ok(Err(e)) => out.push(json_shard_err(i, &e)),
+            Err(e) => out.push(json_shard_err(i, &e)),
         }
     }
     serde_json_like::Value(format!("[{}]", out.join(",")))
@@ -125,8 +125,8 @@ async fn car_import(
             "{{\"blocks\":{},\"bytes\":{},\"skipped\":{},\"corrupt\":{},\"errors\":{}}}",
             r.blocks, r.bytes, r.skipped, r.corrupt, r.errors
         )),
-        Ok(Err(e)) => serde_json_like::Value(format!("{{\"error\":\"{e}\"}}")),
-        Err(e) => serde_json_like::Value(format!("{{\"error\":\"{e}\"}}")),
+        Ok(Err(e)) => json_err(&e),
+        Err(e) => json_err(&e),
     }
 }
 
@@ -156,8 +156,8 @@ async fn car_export(
             "{{\"blocks\":{},\"bytes\":{}}}",
             r.blocks, r.bytes
         )),
-        Ok(Err(e)) => serde_json_like::Value(format!("{{\"error\":\"{e}\"}}")),
-        Err(e) => serde_json_like::Value(format!("{{\"error\":\"{e}\"}}")),
+        Ok(Err(e)) => json_err(&e),
+        Err(e) => json_err(&e),
     }
 }
 
@@ -183,8 +183,8 @@ async fn run_migrate(
             "{{\"scanned\":{},\"migrated\":{},\"skipped_small\":{},\"skipped_ec\":{},\"canary_failed\":{},\"errors\":{},\"done\":{}}}",
             r.scanned, r.migrated, r.skipped_small, r.skipped_ec, r.canary_failed, r.errors, r.done
         )),
-        Ok(Err(e)) => serde_json_like::Value(format!("{{\"error\":\"{e}\"}}")),
-        Err(e) => serde_json_like::Value(format!("{{\"error\":\"{e}\"}}")),
+        Ok(Err(e)) => json_err(&e),
+        Err(e) => json_err(&e),
     }
 }
 
@@ -202,7 +202,7 @@ async fn ballast_release(
         }
         match s.release_ballast() {
             Ok(b) => out.push(format!("{{\"shard\":{i},\"released\":{b}}}")),
-            Err(e) => out.push(format!("{{\"shard\":{i},\"error\":\"{e}\"}}")),
+            Err(e) => out.push(json_shard_err(i, &e)),
         }
     }
     serde_json_like::Value(format!("[{}]", out.join(",")))
@@ -268,8 +268,8 @@ async fn structure(State(st): State<AdminState>) -> serde_json_like::Value {
                 rep.keys_at_risk,
                 rep.orphan_segments
             )),
-            Ok(Err(e)) => out.push(format!("{{\"shard\":{i},\"error\":\"{e}\"}}")),
-            Err(e) => out.push(format!("{{\"shard\":{i},\"error\":\"{e}\"}}")),
+            Ok(Err(e)) => out.push(json_shard_err(i, &e)),
+            Err(e) => out.push(json_shard_err(i, &e)),
         }
     }
     serde_json_like::Value(format!("[{}]", out.join(",")))
@@ -321,8 +321,8 @@ async fn zfs_health(State(st): State<AdminState>) -> serde_json_like::Value {
                     drift_json.join(",")
                 ));
             }
-            Ok(Err(e)) => out.push(format!("{{\"shard\":{i},\"error\":\"{e}\"}}")),
-            Err(e) => out.push(format!("{{\"shard\":{i},\"error\":\"{e}\"}}")),
+            Ok(Err(e)) => out.push(json_shard_err(i, &e)),
+            Err(e) => out.push(json_shard_err(i, &e)),
         }
     }
     serde_json_like::Value(format!("[{}]", out.join(",")))
@@ -342,8 +342,8 @@ async fn run_resilver(
             "{{\"scanned\":{},\"repaired\":{},\"errors\":{},\"done\":{}}}",
             r.scanned, r.repaired, r.errors, r.done
         )),
-        Ok(Err(e)) => serde_json_like::Value(format!("{{\"error\":\"{e}\"}}")),
-        Err(e) => serde_json_like::Value(format!("{{\"error\":\"{e}\"}}")),
+        Ok(Err(e)) => json_err(&e),
+        Err(e) => json_err(&e),
     }
 }
 
@@ -384,8 +384,8 @@ async fn run_gc(
                 rep.orphan_bytes
                 ));
             }
-            Ok(Err(e)) => out.push(format!("{{\"shard\":{i},\"error\":\"{e}\"}}")),
-            Err(e) => out.push(format!("{{\"shard\":{i},\"error\":\"{e}\"}}")),
+            Ok(Err(e)) => out.push(json_shard_err(i, &e)),
+            Err(e) => out.push(json_shard_err(i, &e)),
         }
     }
     serde_json_like::Value(format!("[{}]", out.join(",")))
@@ -403,4 +403,30 @@ mod serde_json_like {
                 .into_response()
         }
     }
+}
+
+/// W1.4: экранирование строки для безопасного встраивания в JSON-значение.
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 8);
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c < '\x20' => { let _ = std::fmt::Write::write_fmt(&mut out, format_args!("\\u{:04x}", c as u32)); }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// W1.4: JSON-ошибка с экранированием сообщения.
+fn json_shard_err(shard: usize, e: &dyn std::fmt::Display) -> String {
+    format!("{{\"shard\":{shard},\"error\":\"{}\"}}", json_escape(&e.to_string()))
+}
+
+fn json_err(e: &dyn std::fmt::Display) -> serde_json_like::Value {
+    serde_json_like::Value(format!("{{\"error\":\"{}\"}}", json_escape(&e.to_string())))
 }
