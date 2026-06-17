@@ -4,6 +4,8 @@
 //! ozd-admin — admin/metrics поверхность (Фаза 5: scrub/resilver/balancer).
 //! v1: usage-репорт по шардам + ручной запуск GC (#122).
 
+pub mod types;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -210,12 +212,11 @@ async fn ballast_release(
 }
 
 /// W18: GET /admin/capacity — ёмкость и прогноз заполнения.
-/// Возвращает per-shard free/total/fill% + overall ETA до 95%.
-async fn capacity_report(State(st): State<AdminState>) -> serde_json_like::Value {
+async fn capacity_report(State(st): State<AdminState>) -> axum::Json<types::CapacityResponse> {
     use std::sync::atomic::Ordering::Relaxed;
     let mut total_bytes = 0u64;
     let mut free_bytes = 0u64;
-    let mut shards_json = Vec::new();
+    let mut shards = Vec::new();
     for (i, s) in st.shards.iter().enumerate() {
         let cap = s.usage().unwrap_or_default();
         total_bytes += cap.total_bytes;
@@ -225,28 +226,28 @@ async fn capacity_report(State(st): State<AdminState>) -> serde_json_like::Value
         } else {
             0.0
         };
-        shards_json.push(format!(
-            "{{\"shard\":{i},\"total\":{},\"free\":{},\"fill_pct\":{:.1}}}",
-            cap.total_bytes, cap.free_bytes, fill_pct
-        ));
+        shards.push(types::CapacityShard {
+            shard: i,
+            total: cap.total_bytes,
+            free: cap.free_bytes,
+            fill_pct: (fill_pct * 10.0).round() / 10.0,
+        });
     }
     let overall_fill = if total_bytes > 0 {
         100.0 * (1.0 - free_bytes as f64 / total_bytes as f64)
     } else {
         0.0
     };
-    // ETA до 95%: (free - 5% total) / write_rate_bps
     let written = st.pool.metrics().bytes_written.load(Relaxed);
-    // write_rate не известен мгновенно — отдаём bytes_written,
-    // а rate(ozd_bytes_written_total[5m]) считает Prometheus/Grafana
-    let free_until_95 = free_bytes.saturating_sub(total_bytes / 20); // 95% порог
-    serde_json_like::Value(format!(
-        "{{\"total_bytes\":{total_bytes},\"free_bytes\":{free_bytes},\"fill_pct\":{:.1},\
-         \"bytes_written_total\":{written},\"free_until_95pct\":{free_until_95},\
-         \"shards\":[{}]}}",
-        overall_fill,
-        shards_json.join(",")
-    ))
+    let free_until_95 = free_bytes.saturating_sub(total_bytes / 20);
+    axum::Json(types::CapacityResponse {
+        total_bytes,
+        free_bytes,
+        fill_pct: (overall_fill * 10.0).round() / 10.0,
+        bytes_written_total: written,
+        free_until_95pct: free_until_95,
+        shards,
+    })
 }
 
 /// GET /metrics — Prometheus text exposition (GO-MIGRATION P2, без зависимостей).
@@ -388,16 +389,17 @@ async fn run_resilver(
     }
 }
 
-async fn usage(State(st): State<AdminState>) -> serde_json_like::Value {
-    let mut disks = Vec::new();
-    for (i, s) in st.shards.iter().enumerate() {
-        let cap = s.usage().unwrap_or_default();
-        disks.push(format!(
-            "{{\"shard\":{i},\"total\":{},\"free\":{}}}",
-            cap.total_bytes, cap.free_bytes
-        ));
-    }
-    serde_json_like::Value(format!("[{}]", disks.join(",")))
+async fn usage(State(st): State<AdminState>) -> axum::Json<Vec<types::UsageItem>> {
+    let items: Vec<types::UsageItem> = st
+        .shards
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let cap = s.usage().unwrap_or_default();
+            types::UsageItem { shard: i, total: cap.total_bytes, free: cap.free_bytes }
+        })
+        .collect();
+    axum::Json(items)
 }
 
 /// POST /admin/gc[?ratio=0.5] — один GC-проход на каждом шарде (#122).
