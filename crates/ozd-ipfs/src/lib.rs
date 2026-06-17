@@ -125,9 +125,9 @@ fn map_err(e: DomainError) -> Response {
         DomainError::IntegrityViolation(m) => {
             s3_error(StatusCode::INTERNAL_SERVER_ERROR, "InternalError", &m)
         }
-        // W24: shutdown → 503 (клиент знает, что сервис уходит; Kubo retry)
-        DomainError::Io(ref msg) if msg.starts_with("shutting down") => {
-            s3_error(StatusCode::SERVICE_UNAVAILABLE, "ServiceUnavailable", &e.to_string())
+        // W27: shutdown → 503 (typed variant, no string-matching)
+        DomainError::Shutdown => {
+            s3_error(StatusCode::SERVICE_UNAVAILABLE, "ServiceUnavailable", "shutting down")
         }
         other => s3_error(StatusCode::INTERNAL_SERVER_ERROR, "InternalError", &other.to_string()),
     }

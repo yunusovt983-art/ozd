@@ -1536,9 +1536,9 @@ enum MigrateOutcome {
 
 impl BlockStore for Pool {
     fn put(&self, key: &BlockKey, data: &[u8]) -> DomainResult<()> {
-        // W21: reject writes during graceful shutdown (drain)
+        // W21/W27: reject writes during graceful shutdown (drain)
         if self.is_shutting_down() {
-            return Err(DomainError::Io("shutting down: writes rejected".into()));
+            return Err(DomainError::Shutdown);
         }
         use std::sync::atomic::Ordering::Relaxed;
         let t0 = Instant::now();

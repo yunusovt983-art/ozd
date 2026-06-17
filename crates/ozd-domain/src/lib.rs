@@ -89,6 +89,9 @@ pub enum DomainError {
     /// W5.1: невалидная конфигурация (замена assert/panic при старте)
     #[error("config: {0}")]
     Config(String),
+    /// W27: пул в режиме graceful shutdown — запись запрещена
+    #[error("shutdown: writes rejected")]
+    Shutdown,
     #[error("io: {0}")]
     Io(String),
 }
