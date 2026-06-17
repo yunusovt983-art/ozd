@@ -252,6 +252,34 @@ fn default_heal_cap() -> usize {
     2
 }
 
+/// W1.1: заглушка для недоступного шарда (degraded start) — все операции
+/// возвращают ошибку, Pool пометит его Faulted и HRW исключит из placement.
+struct NullEngine;
+
+impl ShardEngine for NullEngine {
+    fn put(&self, _: &ozd_domain::BlockKey, _: &[u8]) -> ozd_domain::DomainResult<()> {
+        Err(ozd_domain::DomainError::Io("shard unavailable (degraded start)".into()))
+    }
+    fn get(&self, _: &ozd_domain::BlockKey) -> ozd_domain::DomainResult<Vec<u8>> {
+        Err(ozd_domain::DomainError::Io("shard unavailable (degraded start)".into()))
+    }
+    fn has(&self, _: &ozd_domain::BlockKey) -> ozd_domain::DomainResult<bool> {
+        Err(ozd_domain::DomainError::Io("shard unavailable (degraded start)".into()))
+    }
+    fn delete(&self, _: &ozd_domain::BlockKey) -> ozd_domain::DomainResult<()> {
+        Err(ozd_domain::DomainError::Io("shard unavailable (degraded start)".into()))
+    }
+    fn list(&self, _: &[u8], _: Option<&ozd_domain::BlockKey>, _: usize) -> ozd_domain::DomainResult<Vec<(ozd_domain::BlockKey, u64)>> {
+        Ok(vec![])
+    }
+    fn usage(&self) -> ozd_domain::DomainResult<ozd_domain::Capacity> {
+        Ok(ozd_domain::Capacity { total_bytes: 0, free_bytes: 0 })
+    }
+    fn flush(&self) -> ozd_domain::DomainResult<()> {
+        Ok(())
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -284,8 +312,9 @@ async fn main() -> Result<()> {
     );
 
     let mut shards: Vec<Arc<dyn ShardEngine>> = Vec::with_capacity(cfg.disks.len());
+    let mut faulted_at_start: Vec<usize> = Vec::new();
     for (i, d) in cfg.disks.iter().enumerate() {
-        let e = DiskEngine::open(EngineConfig {
+        match DiskEngine::open(EngineConfig {
             data_path: d.data_path.clone(),
             index_path: d.index_path.clone(),
             segment_max_size: cfg.engine.segment_max_size.unwrap_or(2 << 30),
@@ -296,10 +325,26 @@ async fn main() -> Result<()> {
             ballast_bytes: cfg.engine.ballast_bytes.unwrap_or(0),
             failover_path: d.failover_path.clone(),
             fadvise_dontneed: cfg.engine.fadvise_dontneed.unwrap_or(true),
-        })
-        .map_err(|e| anyhow::anyhow!("disk {i} ({}): {e}", d.data_path.display()))?;
-        shards.push(Arc::new(e));
+        }) {
+            Ok(e) => shards.push(Arc::new(e)),
+            Err(e) => {
+                // W1.1: degraded start — шард недоступен, стартуем без него
+                tracing::error!(
+                    shard = i, path = %d.data_path.display(), err = %e,
+                    "DEGRADED START: шард не открылся — помечен Faulted, продолжаем"
+                );
+                shards.push(Arc::new(NullEngine));
+                faulted_at_start.push(i);
+            }
+        }
     }
+    // Минимум живых шардов: хотя бы R штук (иначе запись невозможна)
+    let alive = cfg.disks.len() - faulted_at_start.len();
+    anyhow::ensure!(
+        alive >= cfg.replicas,
+        "degraded start: живых шардов {alive} < replicas R={} — невозможно обеспечить запись",
+        cfg.replicas
+    );
 
     // E20 (#138): erasure-конфиг
     let ec = match cfg.redundancy.as_str() {
@@ -353,6 +398,19 @@ async fn main() -> Result<()> {
                 .then(|| ozd_app::verified::ObConfig { min_size: cfg.ob_min_size }),
         },
     ));
+
+    // W1.1: degraded start — пометить сбойные шарды Faulted в Pool
+    for &i in &faulted_at_start {
+        pool.set_shard_status(i, ozd_domain::ShardStatus::Faulted);
+    }
+    if !faulted_at_start.is_empty() {
+        tracing::warn!(
+            faulted = ?faulted_at_start,
+            alive = cfg.disks.len() - faulted_at_start.len(),
+            "DEGRADED MODE: {} шардов недоступны при старте",
+            faulted_at_start.len()
+        );
+    }
 
     // ZFS-пулы шардов (для health-монитора и /admin/zfs)
     let zfs_pools: Vec<Option<ozd_zfs::ZfsPool>> = cfg
