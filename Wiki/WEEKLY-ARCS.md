@@ -327,8 +327,8 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 | Задача | Файл | Описание | Статус |
 |--------|------|----------|--------|
-| W20.1 | ozd-daemon/main.rs | `tracing_subscriber::fmt().json()` — JSON-логи для production (конфиг `log_format: text|json`) | ⬜ |
-| W20.2 | ozd-app/pool.rs | Добавить `tracing::instrument` на put/get/resilver_step (span с key/shard) | ⬜ |
+| W20.1 | ozd-daemon/main.rs | `tracing_subscriber::fmt().json()` — JSON-логи для production (env `OZD_LOG_FORMAT=json`, конфиг `log_format: text|json`) | ✅ |
+| W20.2 | ozd-app/pool.rs | Добавить `tracing::instrument` на put_body/get_inner/resilver_step (span с key/data_len/batch) | ✅ |
 
 **Критерий:** `RUST_LOG=info OZD_LOG_FORMAT=json ./ozd` → структурированные JSON-логи; spans видны в Jaeger/Loki.
 
@@ -338,10 +338,10 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 | Задача | Файл | Описание | Статус |
 |--------|------|----------|--------|
-| W21.1 | ozd-daemon/main.rs | SIGTERM → drain: перестать принимать новые PUT, дождать in-flight (timeout 30с), flush, exit | ⬜ |
-| W21.2 | ozd-app/pool.rs | `Pool::shutdown()` — установить флаг, put возвращает ошибку; get продолжает | ⬜ |
+| W21.1 | ozd-daemon/main.rs | SIGTERM → drain: перестать принимать новые PUT, дождать in-flight (timeout 30с), flush, exit | ✅ |
+| W21.2 | ozd-app/pool.rs | `Pool::shutdown()` — установить флаг, put возвращает ошибку; get продолжает | ✅ |
 
-**Критерий:** `kill -TERM <pid>` → демон завершается чисто за ≤30с; клиенты получают 503 на PUT.
+**Критерий:** `kill -TERM <pid>` → демон завершается чисто за ≤30с; клиенты получают ошибку на PUT.
 
 ---
 
@@ -349,10 +349,10 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 | Задача | Файл | Описание | Статус |
 |--------|------|----------|--------|
-| W22.1 | ozd-ipfs/src/lib.rs | Tower middleware: rate-limit по IP (конфиг `max_rps: u32`); 429 Too Many Requests | ⬜ |
-| W22.2 | ozd-daemon/main.rs | Конфиг `rate_limit_rps` в toml; 0 = выключен | ⬜ |
+| W22.1 | ozd-ipfs/src/ratelimit.rs | Per-IP token-bucket middleware: rate-limit по IP (конфиг `rate_limit_rps: u32`); 429 Too Many Requests | ✅ |
+| W22.2 | ozd-daemon/main.rs | Конфиг `rate_limit_rps` в toml; 0 = выключен | ✅ |
 
-**Критерий:** при max_rps=100 101-й запрос в секунду → 429; /healthz и /metrics — без лимита.
+**Критерий:** при rate_limit_rps=100 101-й запрос в секунду → 429; /healthz и /metrics — без лимита.
 
 ---
 
@@ -360,9 +360,9 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 | Задача | Файл | Описание | Статус |
 |--------|------|----------|--------|
-| W23.1 | ozd-admin/src/lib.rs | POST /admin/snapshot → hardlink sealed-сегментов в `snapshots/<id>/` (мгновенный) | ⬜ |
-| W23.2 | ozd-admin/src/lib.rs | GET /admin/snapshots → список снимков с timestamp/size | ⬜ |
-| W23.3 | scripts/backup.sh | Скрипт: snapshot → tar → upload S3/rsync (оператор-забота) | ⬜ |
+| W23.1 | ozd-admin/src/lib.rs | POST /admin/snapshot → hardlink sealed-сегментов в `snapshots/<id>/` (мгновенный) | ✅ |
+| W23.2 | ozd-admin/src/lib.rs | GET /admin/snapshots → список снимков с timestamp/size | ✅ |
+| W23.3 | scripts/backup.sh | Скрипт: snapshot → tar+zstd → upload S3/rsync (оператор-забота) | ✅ |
 
 **Критерий:** `POST /admin/snapshot` < 1с (hardlinks); `backup.sh` архивирует снимок.
 
