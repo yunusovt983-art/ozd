@@ -93,6 +93,8 @@ pub struct Pool {
     /// E28: флаг «slow» по шарду (выставляет daemon-FSM); topology
     /// эскалирует Online→Suspect — вес ×0.01 в HRW
     slow_flags: RwLock<Vec<bool>>,
+    /// W21: graceful shutdown — PUT отклоняется, GET продолжает
+    shutting_down: std::sync::atomic::AtomicBool,
 }
 
 /// E16 (#140): приоритет heal-заявки (Urgent — кворум потерян/нечитаемо).
@@ -224,6 +226,7 @@ impl Pool {
             ),
             slow_mon,
             slow_flags: RwLock::new(vec![false; n]),
+            shutting_down: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -461,10 +464,27 @@ impl Pool {
         Ok(())
     }
 
+    /// W21: перевести пул в режим shutdown — PUT возвращает ошибку, GET продолжает.
+    pub fn shutdown(&self) {
+        self.shutting_down.store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    /// W21: true если пул в состоянии drain (PUT запрещён).
+    pub fn is_shutting_down(&self) -> bool {
+        self.shutting_down.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// W21: текущее число in-flight PUT + GET (для ожидания drain).
+    pub fn inflight_count(&self) -> u64 {
+        use std::sync::atomic::Ordering::Relaxed;
+        self.metrics.inflight_puts.load(Relaxed) + self.metrics.inflight_gets.load(Relaxed)
+    }
+
     /// Один шаг walk-resilver (Фаза 3): до `batch` ключей после `after`
     /// (курсор #102), для каждого — довести число реплик до R (add-only:
     /// недостающие копируем, лишние НЕ трогаем — их уберёт balancer/GC позже).
     /// Идемпотентно: повторный проход по здоровому пулу ничего не копирует.
+    #[tracing::instrument(skip(self), fields(batch))]
     pub fn resilver_step(
         &self,
         after: Option<&BlockKey>,
@@ -768,6 +788,7 @@ impl Pool {
     }
 
     /// Тело без outboard-логики (общая точка put_inner и ob-записи).
+    #[tracing::instrument(skip(self, data), fields(key = ?key, data_len = data.len()))]
     fn put_body(&self, key: &BlockKey, data: &[u8]) -> DomainResult<()> {
         // E20 (#138): крупные тела — erasure K+M; мелочь остаётся зеркалом
         if let Some(ec) = self.cfg.ec.clone() {
@@ -853,6 +874,7 @@ impl Pool {
         }
     }
 
+    #[tracing::instrument(skip(self), fields(key = ?key))]
     fn get_inner(&self, key: &BlockKey) -> DomainResult<Vec<u8>> {
         // E20: при включённом EC эру определяет самоописанность тела
         if let Some(ec) = self.cfg.ec.clone() {
@@ -1514,6 +1536,10 @@ enum MigrateOutcome {
 
 impl BlockStore for Pool {
     fn put(&self, key: &BlockKey, data: &[u8]) -> DomainResult<()> {
+        // W21: reject writes during graceful shutdown (drain)
+        if self.is_shutting_down() {
+            return Err(DomainError::Io("shutting down: writes rejected".into()));
+        }
         use std::sync::atomic::Ordering::Relaxed;
         let t0 = Instant::now();
         self.metrics.inflight_puts.fetch_add(1, Relaxed);

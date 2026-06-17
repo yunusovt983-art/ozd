@@ -37,7 +37,7 @@ anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net", "time"] }
 axum = "0.8"
 parking_lot = "0.12"

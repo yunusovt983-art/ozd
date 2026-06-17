@@ -101,6 +101,12 @@ struct Config {
     migrate_interval_secs: u64,
     #[serde(default = "default_migrate_keys")]
     migrate_keys_per_cycle: usize,
+    /// формат логов: "text" (дефолт, human-readable) | "json" (structured для Loki/Jaeger)
+    #[serde(default = "default_log_format")]
+    log_format: String,
+    /// W22: per-IP rate-limit на S3 API, запросов/с; 0 = выключен
+    #[serde(default)]
+    rate_limit_rps: u32,
     /// до 60 дисков; каждый — точка монтирования ZFS-датасета
     disks: Vec<DiskCfg>,
     #[serde(default)]
@@ -252,6 +258,10 @@ fn default_heal_cap() -> usize {
     2
 }
 
+fn default_log_format() -> String {
+    "text".into()
+}
+
 /// W1.1: заглушка для недоступного шарда (degraded start) — все операции
 /// возвращают ошибку, Pool пометит его Faulted и HRW исключит из placement.
 struct NullEngine;
@@ -282,12 +292,26 @@ impl ShardEngine for NullEngine {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
-        )
-        .init();
+    // W20: ранний парсинг log_format из env (конфиг ещё не прочитан)
+    // OZD_LOG_FORMAT=json или --log-format json (позиция до --config)
+    let early_format = std::env::var("OZD_LOG_FORMAT").unwrap_or_default();
+
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "info".into());
+
+    if early_format.eq_ignore_ascii_case("json") {
+        tracing_subscriber::fmt()
+            .json()
+            .with_env_filter(env_filter)
+            .with_target(true)
+            .with_thread_ids(true)
+            .flatten_event(true)
+            .init();
+    } else {
+        tracing_subscriber::fmt()
+            .with_env_filter(env_filter)
+            .init();
+    }
 
     let cfg_path = std::env::args()
         .skip_while(|a| a != "--config")
@@ -297,6 +321,17 @@ async fn main() -> Result<()> {
         .with_context(|| format!("reading config {cfg_path}"))?;
     let cfg: Config = toml::from_str(&raw).context("parsing config")?;
     anyhow::ensure!(!cfg.disks.is_empty(), "config: at least one disk required");
+    // W20: валидация log_format из конфига
+    anyhow::ensure!(
+        cfg.log_format == "text" || cfg.log_format == "json",
+        "config: log_format = \"{}\" (ожидали text|json)",
+        cfg.log_format
+    );
+    if cfg.log_format == "json" && !early_format.eq_ignore_ascii_case("json") {
+        tracing::info!(
+            "config: log_format=json — для JSON-логов с момента старта используйте OZD_LOG_FORMAT=json"
+        );
+    }
     anyhow::ensure!(
         cfg.replicas <= cfg.disks.len(),
         "config: replicas R={} > disks {}",
@@ -499,12 +534,19 @@ async fn main() -> Result<()> {
         }
         None => pool.clone(),
     };
-    let app = ozd_ipfs::router(store, auth)
+    let rate_limiter = if cfg.rate_limit_rps > 0 {
+        tracing::info!(max_rps = cfg.rate_limit_rps, "rate-limiter enabled (per-IP)");
+        Some(Arc::new(ozd_ipfs::RateLimiter::new(cfg.rate_limit_rps)))
+    } else {
+        None
+    };
+    let app = ozd_ipfs::router(store, auth, rate_limiter)
         .merge(ozd_admin::router(
             shards.clone(),
             pool.clone(),
             cfg.gc_discard_ratio,
             zfs_pools.clone(),
+            cfg.disks.iter().map(|d| d.data_path.clone()).collect(),
         ));
 
     // фоновый ZFS-health-монитор (GO-MIGRATION P1): zpool status → ShardStatus
@@ -782,13 +824,32 @@ async fn main() -> Result<()> {
         .with_context(|| format!("binding {}", cfg.listen))?;
     tracing::info!(addr = %cfg.listen, "ozd S3-gateway listening (point Kubo go-ds-s3 here)");
 
-    // graceful shutdown: flush сегментов (recovery-point) на выходе
+    // W21: graceful shutdown v2 — drain in-flight, timeout 30s, flush
     let pool_for_shutdown = pool.clone();
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
             let _ = tokio::signal::ctrl_c().await;
+            tracing::info!("shutdown: draining — new PUTs rejected, waiting for in-flight");
+            pool_for_shutdown.shutdown();
+
+            // ожидаем обнуления in-flight с таймаутом 30с
+            let drain_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+            loop {
+                let inflight = pool_for_shutdown.inflight_count();
+                if inflight == 0 {
+                    tracing::info!("shutdown: all in-flight drained");
+                    break;
+                }
+                if tokio::time::Instant::now() >= drain_deadline {
+                    tracing::warn!(inflight, "shutdown: drain timeout (30s) — forcing flush");
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+
             tracing::info!("shutdown: flushing segments");
             let _ = pool_for_shutdown.flush_all();
+            tracing::info!("shutdown: complete");
         })
         .await?;
     Ok(())
