@@ -403,4 +403,46 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 ---
 
+## Неделя 6 (18–24 июля 2026)
+
+### Арка W24 — HTTP 503 при graceful shutdown ✅
+
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W24.1 | ozd-ipfs/src/lib.rs | map_err: shutdown Io → 503 ServiceUnavailable (XML) | ✅ |
+
+**Критерий:** PUT при shutdown → HTTP 503 `<Code>ServiceUnavailable</Code>`; GET продолжает.
+
+---
+
+### Арка W25 — DELETE /admin/snapshot ✅
+
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W25.1 | ozd-admin/src/lib.rs | DELETE /admin/snapshot?id=X — удаляет hardlinks со всех шардов, 404 если нет | ✅ |
+| W25.2 | ozd-admin/src/types.rs | SnapshotDeleteResponse (id, deleted_files, deleted_dirs) | ✅ |
+
+**Критерий:** DELETE с валидным id удаляет dirs; невалидный/несуществующий → 400/404.
+
+---
+
+### Арка W26 — snapshot_dir config override ✅
+
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W26.1 | ozd-daemon/main.rs | `snapshot_dir: Option<PathBuf>` в Config (дефолт None = per-shard) | ✅ |
+| W26.2 | ozd-admin/src/lib.rs | snap_path_for/snap_root_for helpers; все snapshot-хэндлеры обновлены | ✅ |
+
+**Критерий:** snapshot_dir = None → старое поведение; задан → единый каталог.
+
+---
+
+## Приоритизация (MoSCoW) — Неделя 6
+
+| Must | Should | Could | Won't (эта неделя) |
+|------|--------|-------|---------------------|
+| W24 503 on shutdown | W25 snapshot delete | W26 snapshot_dir | Multi-node (Ч3) |
+
+---
+
 *Обновлять по результатам спринта. Следующий ревью — после Арки W3.*
