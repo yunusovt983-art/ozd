@@ -102,9 +102,10 @@ async fn zfs_scrub(
 async fn car_import(
     State(st): State<AdminState>,
     Query(q): Query<HashMap<String, String>>,
-) -> serde_json_like::Value {
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
     let Some(path) = q.get("path").cloned() else {
-        return serde_json_like::Value("{\"error\":\"path required\"}".into());
+        return axum::Json(types::ErrorResponse::new("path required")).into_response();
     };
     let prefix = q.get("prefix").cloned().unwrap_or_else(|| "/blocks/".into());
     let par: usize = q.get("parallelism").and_then(|s| s.parse().ok()).unwrap_or(8);
@@ -124,12 +125,15 @@ async fn car_import(
     })
     .await;
     match res {
-        Ok(Ok(r)) => serde_json_like::Value(format!(
-            "{{\"blocks\":{},\"bytes\":{},\"skipped\":{},\"corrupt\":{},\"errors\":{}}}",
-            r.blocks, r.bytes, r.skipped, r.corrupt, r.errors
-        )),
-        Ok(Err(e)) => json_err(&e),
-        Err(e) => json_err(&e),
+        Ok(Ok(r)) => axum::Json(types::CarImportResponse {
+            blocks: r.blocks,
+            bytes: r.bytes,
+            skipped: r.skipped,
+            corrupt: r.corrupt,
+            errors: r.errors,
+        }).into_response(),
+        Ok(Err(e)) => axum::Json(types::ErrorResponse::new(e)).into_response(),
+        Err(e) => axum::Json(types::ErrorResponse::new(e)).into_response(),
     }
 }
 
@@ -138,9 +142,10 @@ async fn car_import(
 async fn car_export(
     State(st): State<AdminState>,
     Query(q): Query<HashMap<String, String>>,
-) -> serde_json_like::Value {
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
     let Some(path) = q.get("path").cloned() else {
-        return serde_json_like::Value("{\"error\":\"path required\"}".into());
+        return axum::Json(types::ErrorResponse::new("path required")).into_response();
     };
     let prefix = q.get("prefix").cloned().unwrap_or_else(|| "/blocks/".into());
     let pool = st.pool.clone();
@@ -155,12 +160,12 @@ async fn car_export(
     })
     .await;
     match res {
-        Ok(Ok(r)) => serde_json_like::Value(format!(
-            "{{\"blocks\":{},\"bytes\":{}}}",
-            r.blocks, r.bytes
-        )),
-        Ok(Err(e)) => json_err(&e),
-        Err(e) => json_err(&e),
+        Ok(Ok(r)) => axum::Json(types::CarExportResponse {
+            blocks: r.blocks,
+            bytes: r.bytes,
+        }).into_response(),
+        Ok(Err(e)) => axum::Json(types::ErrorResponse::new(e)).into_response(),
+        Err(e) => axum::Json(types::ErrorResponse::new(e)).into_response(),
     }
 }
 
@@ -169,7 +174,8 @@ async fn car_export(
 async fn run_migrate(
     State(st): State<AdminState>,
     Query(q): Query<HashMap<String, String>>,
-) -> serde_json_like::Value {
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
     let batch = q.get("batch").and_then(|s| s.parse().ok()).unwrap_or(2000);
     let p = st.pool.clone();
     let s0 = st.shards[0].clone();
@@ -182,12 +188,17 @@ async fn run_migrate(
     })
     .await;
     match res {
-        Ok(Ok(r)) => serde_json_like::Value(format!(
-            "{{\"scanned\":{},\"migrated\":{},\"skipped_small\":{},\"skipped_ec\":{},\"canary_failed\":{},\"errors\":{},\"done\":{}}}",
-            r.scanned, r.migrated, r.skipped_small, r.skipped_ec, r.canary_failed, r.errors, r.done
-        )),
-        Ok(Err(e)) => json_err(&e),
-        Err(e) => json_err(&e),
+        Ok(Ok(r)) => axum::Json(types::MigrateResponse {
+            scanned: r.scanned,
+            migrated: r.migrated,
+            skipped_small: r.skipped_small,
+            skipped_ec: r.skipped_ec,
+            canary_failed: r.canary_failed,
+            errors: r.errors,
+            done: r.done,
+        }).into_response(),
+        Ok(Err(e)) => axum::Json(types::ErrorResponse::new(e)).into_response(),
+        Err(e) => axum::Json(types::ErrorResponse::new(e)).into_response(),
     }
 }
 
@@ -376,16 +387,19 @@ async fn zfs_health(State(st): State<AdminState>) -> serde_json_like::Value {
 async fn run_resilver(
     State(st): State<AdminState>,
     Query(q): Query<HashMap<String, String>>,
-) -> serde_json_like::Value {
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
     let batch = q.get("batch").and_then(|s| s.parse::<usize>().ok()).unwrap_or(1000);
     let pool = st.pool.clone();
     match tokio::task::spawn_blocking(move || pool.resilver_full(batch)).await {
-        Ok(Ok(r)) => serde_json_like::Value(format!(
-            "{{\"scanned\":{},\"repaired\":{},\"errors\":{},\"done\":{}}}",
-            r.scanned, r.repaired, r.errors, r.done
-        )),
-        Ok(Err(e)) => json_err(&e),
-        Err(e) => json_err(&e),
+        Ok(Ok(r)) => axum::Json(types::ResilverResponse {
+            scanned: r.scanned,
+            repaired: r.repaired,
+            errors: r.errors,
+            done: r.done,
+        }).into_response(),
+        Ok(Err(e)) => axum::Json(types::ErrorResponse::new(e)).into_response(),
+        Err(e) => axum::Json(types::ErrorResponse::new(e)).into_response(),
     }
 }
 
