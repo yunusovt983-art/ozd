@@ -35,17 +35,22 @@ pub use ratelimit::{RateLimitConfig, RateLimiter};
 #[derive(Clone)]
 pub struct AppState {
     pub store: Arc<dyn BlockStore>,
+    /// W28: доступ к Pool для /healthz v2
+    pub pool: Option<Arc<ozd_app::Pool>>,
 }
 
 /// S3-шлюз. `auth = Some(..)` включает обязательный SigV4 (E13) на S3-маршрутах;
 /// `/healthz` всегда открыт. None — dev-режим (только loopback!).
 /// `rate_limiter` — per-IP лимит запросов (W22); None = без лимита.
+/// `pool` — W28: для расширенного /healthz; None в тестах.
 pub fn router(
     store: Arc<dyn BlockStore>,
     auth: Option<SigV4Config>,
     rate_limiter: Option<Arc<RateLimiter>>,
+    pool: Option<Arc<ozd_app::Pool>>,
 ) -> Router {
-    let st = AppState { store };
+    let st = AppState { store, pool };
+    let healthz_st = st.clone();
     let mut s3 = Router::new()
         .route("/{bucket}", get(list_objects))
         .route(
@@ -59,7 +64,7 @@ pub fn router(
     if let Some(limiter) = rate_limiter {
         s3 = s3.layer(axum::middleware::from_fn_with_state(limiter, ratelimit::rate_limit_mw));
     }
-    Router::new().route("/healthz", get(healthz)).merge(s3)
+    Router::new().route("/healthz", get(healthz)).with_state(healthz_st).merge(s3)
 }
 
 /// E13: буферизуем тело → фактический SHA-256 → verify подписи → дальше.
@@ -97,8 +102,31 @@ async fn sigv4_mw(
     }
 }
 
-async fn healthz() -> &'static str {
-    "ok"
+/// W28: расширенный healthz — JSON с состоянием пула.
+async fn healthz(State(st): State<AppState>) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let (status_str, shards, faulted, shutting_down) = match &st.pool {
+        Some(pool) => {
+            let n = pool.shard_count();
+            let f = (0..n)
+                .filter(|&i| pool.shard_status(i) == Some(ozd_domain::ShardStatus::Faulted))
+                .count();
+            let sd = pool.is_shutting_down();
+            let s = if sd { "shutting_down" } else { "ok" };
+            (s, n, f, sd)
+        }
+        None => ("ok", 0, 0, false),
+    };
+    let code = if shutting_down {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        StatusCode::OK
+    };
+    let body = format!(
+        r#"{{"status":"{}","shards":{},"faulted":{},"shutting_down":{}}}"#,
+        status_str, shards, faulted, shutting_down
+    );
+    (code, [(header::CONTENT_TYPE, "application/json")], body).into_response()
 }
 
 fn bkey(key: &str) -> BlockKey {

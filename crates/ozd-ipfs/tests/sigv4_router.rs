@@ -91,7 +91,7 @@ fn signed_request(cfg: &SigV4Config, method: &str, path: &str, body: &[u8]) -> R
 async fn unsigned_rejected_signed_accepted_healthz_open() {
     let cfg = SigV4Config::new("AK1", "topsecret");
     let store = Arc::new(MemStore::default());
-    let app = ozd_ipfs::router(store.clone(), Some(cfg.clone()), None);
+    let app = ozd_ipfs::router(store.clone(), Some(cfg.clone()), None, None);
 
     // healthz — без подписи OK
     let r = app

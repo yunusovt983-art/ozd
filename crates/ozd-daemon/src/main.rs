@@ -543,7 +543,7 @@ async fn main() -> Result<()> {
     } else {
         None
     };
-    let app = ozd_ipfs::router(store, auth, rate_limiter)
+    let app = ozd_ipfs::router(store, auth, rate_limiter, Some(pool.clone()))
         .merge(ozd_admin::router(
             shards.clone(),
             pool.clone(),

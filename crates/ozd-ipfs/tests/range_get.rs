@@ -57,7 +57,7 @@ async fn range_get_verified_and_corruption_rejected() {
     store
         .put(&ozd_app::verified::ob_key(&key), &ozd_app::verified::make_outboard(&body))
         .unwrap();
-    let app = ozd_ipfs::router(store.clone(), None, None);
+    let app = ozd_ipfs::router(store.clone(), None, None, None);
     let url = "/blocks/%2Fblocks%2FRNG1";
 
     // верифицированный 206
@@ -120,7 +120,7 @@ async fn suffix_range_and_bao_slice() {
     store
         .put(&ozd_app::verified::ob_key(&key), &ozd_app::verified::make_outboard(&body))
         .unwrap();
-    let app = ozd_ipfs::router(store.clone(), None, None);
+    let app = ozd_ipfs::router(store.clone(), None, None, None);
     let url = "/blocks/%2Fblocks%2FSFX1";
 
     // суффикс-форма: последние 500 байт, верифицировано
