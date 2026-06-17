@@ -176,3 +176,22 @@ pub struct SnapshotDeleteResponse {
     pub deleted_files: usize,
     pub deleted_dirs: usize,
 }
+
+/// W30: runtime config introspection (без секретов).
+#[derive(Serialize, Clone)]
+pub struct RuntimeConfig {
+    pub replicas: usize,
+    pub write_quorum: usize,
+    pub redundancy: String,
+    pub ec_data: usize,
+    pub ec_parity: usize,
+    pub gc_discard_ratio: f64,
+    pub gc_interval_secs: u64,
+    pub scrub_interval_secs: u64,
+    pub bg_max_bytes_per_sec: u64,
+    pub bg_min_bytes_per_sec: u64,
+    pub rate_limit_rps: u32,
+    pub shards: usize,
+    pub adaptive_hedge: bool,
+    pub blake3_outboard: bool,
+}

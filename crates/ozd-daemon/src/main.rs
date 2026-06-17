@@ -551,6 +551,22 @@ async fn main() -> Result<()> {
             zfs_pools.clone(),
             cfg.disks.iter().map(|d| d.data_path.clone()).collect(),
             cfg.snapshot_dir.clone(),
+            Arc::new(ozd_admin::types::RuntimeConfig {
+                replicas: cfg.replicas,
+                write_quorum: cfg.write_quorum,
+                redundancy: cfg.redundancy.clone(),
+                ec_data: cfg.ec_data,
+                ec_parity: cfg.ec_parity,
+                gc_discard_ratio: cfg.gc_discard_ratio,
+                gc_interval_secs: cfg.gc_interval_secs,
+                scrub_interval_secs: cfg.scrub_interval_secs,
+                bg_max_bytes_per_sec: cfg.bg_max_bytes_per_sec,
+                bg_min_bytes_per_sec: cfg.bg_min_bytes_per_sec,
+                rate_limit_rps: cfg.rate_limit_rps,
+                shards: cfg.disks.len(),
+                adaptive_hedge: cfg.adaptive_hedge,
+                blake3_outboard: cfg.blake3_outboard,
+            }),
         ));
 
     // фоновый ZFS-health-монитор (GO-MIGRATION P1): zpool status → ShardStatus

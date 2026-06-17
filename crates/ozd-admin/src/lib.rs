@@ -29,6 +29,8 @@ pub struct AdminState {
     pub data_paths: Vec<PathBuf>,
     /// W26: общий каталог снимков (None = per-shard <data_path>/snapshots)
     pub snapshot_dir: Option<PathBuf>,
+    /// W30: runtime config для GET /admin/config
+    pub runtime_config: Arc<types::RuntimeConfig>,
 }
 
 pub fn router(
@@ -38,6 +40,7 @@ pub fn router(
     zfs: Vec<Option<ozd_zfs::ZfsPool>>,
     data_paths: Vec<PathBuf>,
     snapshot_dir: Option<PathBuf>,
+    runtime_config: Arc<types::RuntimeConfig>,
 ) -> Router {
     Router::new()
         .route("/admin/usage", get(usage))
@@ -54,8 +57,9 @@ pub fn router(
         .route("/admin/capacity", get(capacity_report))
         .route("/admin/snapshot", post(create_snapshot).delete(delete_snapshot))
         .route("/admin/snapshots", get(list_snapshots))
+        .route("/admin/config", get(get_config))
         .route("/metrics", get(metrics))
-        .with_state(AdminState { shards, pool, gc_discard_ratio, zfs, data_paths, snapshot_dir })
+        .with_state(AdminState { shards, pool, gc_discard_ratio, zfs, data_paths, snapshot_dir, runtime_config })
 }
 
 /// POST /admin/scrub?shard=N&batch=M — один deep-scrub шаг (CRC + self-heal).
@@ -654,6 +658,11 @@ async fn delete_snapshot(
             axum::Json(types::ErrorResponse::new(msg))).into_response(),
         Err(e) => axum::Json(types::ErrorResponse::new(e)).into_response(),
     }
+}
+
+/// W30: GET /admin/config — текущие runtime-параметры (без секретов).
+async fn get_config(State(st): State<AdminState>) -> axum::Json<types::RuntimeConfig> {
+    axum::Json((*st.runtime_config).clone())
 }
 
 /// W26: вычислить путь snapshot-директории для шарда.
