@@ -84,14 +84,48 @@ cargo build --release
   `[auth]`-секции — dev-режим без проверки (только loopback!).
 - После правки `Datastore.Spec` нужно синхронизировать `datastore_spec`.
 
-## 4. Что уже работает / что дальше (по PLAN.md)
+## 4. Что уже работает (v0.3, июнь 2026)
 
-| Готово (v0.1) | Дальше |
+| Компонент | Статус |
 |---|---|
-| pack-сегменты + CRC записи + recovery torn-tail (#99/#111) | микроблоки 16КБ + zstd (#15) |
-| redb-индекс: addr/inline-split (#80), inline-мелочь (#44) | LazyIndex (#112), WAL-режимы (#59) |
-| HRW top-R по free + гистерезис 0.95 (#2/#130) | full compare-cascade, ballast (#127) |
-| Pool R=2/W=2, чтение с живой реплики, fallback-скан | speculative retry (#121), handoff (#41) |
-| TTL-кэш free-space (#137), discard-счётчики (#122 задел) | GC сегментов (Pebble/#122), scrub (#102/#141) |
-| S3-subset для go-ds-s3 + ListObjectsV2 | walk-resilver (Фаза 3), heal-queue (#140) |
-| graceful shutdown с flush (recovery-point) | disk-health FSM (#142), Forseti (#47) |
+| pack-сегменты + CRC + zstd-сжатие + recovery torn-tail | ✅ E2/E10 |
+| redb-индекс: addr v3 (era-бит) + inline-split + stat без чтения | ✅ E11/E21b |
+| HRW top-R по free + гистерезис 0.95 + TTL-кэш ёмкости | ✅ E3 |
+| Pool R=2/W=2 + scoped parallel write + hedged-read (adaptive p99) | ✅ E9/E27 |
+| Handoff (#41) + MRF heal-queue (приоритеты, bulkhead, параллельный дренаж) | ✅ E16 |
+| GC сегментов (discard-ratio, CAS-перенос, sweep_orphans периодический) | ✅ E5/W6 |
+| Walk-resilver (курсор, идемпотентность, полный проход с resume) | ✅ E6 |
+| Deep-scrub (CRC-чтение + self-heal с реплик + Urgent MRF) | ✅ E7 |
+| ozd-zfs: runner/sentinel/drift-audit/identity/freeing + HealthFsm (4-state) | ✅ E8/W12 |
+| Erasure 4+2 (Reed-Solomon, самоописанные куски, degraded-read, repair) | ✅ E20 |
+| Миграция mirror→erasure (canary, persist-курсор, era-бэкфилл) | ✅ E21 |
+| CAR import/export (CARv1, sha2-verify, Kubo-ключи, параллельно) | ✅ E22 |
+| BLAKE3 outboard (verified Range GET, bao-слайс наружу) | ✅ E23 |
+| СуперДиск NVMe read-leg (write-through, FIFO-эвикция, coalescing) | ✅ E25 |
+| SigV4 аутентификация (payload-hash, skew ±15m) | ✅ E13 |
+| Degraded start + ZFS-таймауты + disk-slow EWMA-монитор | ✅ W1/W5 |
+| Prometheus histogram + inflight gauges + Grafana-дашборд | ✅ W4 |
+| Property-тесты (proptest) + CI (clippy + bench smoke) | ✅ W7 |
+| AsyncBlockStore trait + SpawnBlockingAdapter (подготовка Ч3) | ✅ W8 |
+| Docker integration (compose + Kubo+go-ds-s3 + smoke-тест) | ✅ W9 |
+| gen_config.sh + systemd-unit | ✅ W10 |
+
+## 5. Docker — быстрый запуск (dev)
+
+```sh
+cd deployments/docker
+docker compose up --build
+# ozd: localhost:9100 (S3 API + /healthz + /metrics)
+# Kubo: localhost:5001 (IPFS API)
+# smoke-тест:
+../../scripts/kubo_smoke.sh http://localhost:9100
+```
+
+## 6. Что дальше (ROADMAP Арка 8+)
+
+| Задача | Зависимость |
+|---|---|
+| E30 Kubo-стенд (реальный трафик) | сервер с 60 HDD |
+| E31 Деплой на полку (gen_config + systemd) | сервер |
+| E32 Нагрузка + хаос-тест (выдернуть диск) | сервер |
+| Арка 9: Merkle anti-entropy, tombstone, P2P verified fetch | после E30–E32 |
