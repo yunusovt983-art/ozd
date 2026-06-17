@@ -12,6 +12,52 @@
 **Целевой деплой:** один сервер, **60 × HDD**, один IPFS-демон (~3,8 млрд блоков, ~480 ТБ
 полезных при R=2). Специфика HDD/масштаба вынесена в [ARCHITECTURE §8](Wiki/ARCHITECTURE.md#8-целевой-масштаб-60--hdd-на-одном-сервере).
 
+## Quick Start
+
+```bash
+# 1. Сборка
+cargo build --release
+
+# 2. Запуск (3 диска в /tmp для теста)
+mkdir -p /tmp/ozd-d{0,1,2}
+cat > /tmp/ozd-test.toml << 'EOF'
+listen = "127.0.0.1:9100"
+replicas = 2
+write_quorum = 2
+[[disks]]
+data_path = "/tmp/ozd-d0"
+[[disks]]
+data_path = "/tmp/ozd-d1"
+[[disks]]
+data_path = "/tmp/ozd-d2"
+EOF
+./target/release/ozd-daemon --config /tmp/ozd-test.toml &
+
+# 3. Проверка
+curl -s http://localhost:9100/healthz        # → "ok"
+
+# 4. PUT блок
+curl -X PUT -d "hello ipfs" http://localhost:9100/kubo/blocks/test1
+
+# 5. GET блок
+curl http://localhost:9100/kubo/blocks/test1  # → "hello ipfs"
+
+# 6. Метрики (Prometheus)
+curl http://localhost:9100/metrics | head -20
+
+# 7. Полный smoke-тест
+./scripts/kubo_smoke.sh http://localhost:9100
+```
+
+### Docker (с Kubo)
+
+```bash
+cd deployments/docker
+docker compose up --build
+# ozd: localhost:9100, Kubo API: localhost:5001
+ipfs --api=/ip4/127.0.0.1/tcp/5001 add README.md
+```
+
 ## Архитектура крейтов
 
 ```
