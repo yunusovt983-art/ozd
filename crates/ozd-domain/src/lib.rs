@@ -77,6 +77,18 @@ pub enum DomainError {
     IntegrityViolation(String),
     #[error("write quorum not reached: {ok} < {want}")]
     QuorumNotReached { ok: usize, want: usize },
+    /// W5.1: команда/операция не завершилась за таймаут
+    #[error("timeout: {0}")]
+    Timeout(String),
+    /// W5.1: диск полон (ENOSPC) — запись невозможна
+    #[error("disk full: {0}")]
+    DiskFull(String),
+    /// W5.1: данные повреждены на конкретном ключе (CRC mismatch / zstd decode)
+    #[error("corrupt record: {0}")]
+    Corrupt(String),
+    /// W5.1: невалидная конфигурация (замена assert/panic при старте)
+    #[error("config: {0}")]
+    Config(String),
     #[error("io: {0}")]
     Io(String),
 }
