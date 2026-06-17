@@ -204,15 +204,15 @@ CID ──► placement(CID, topology) ──► [ShardId₁ .. ShardId_R]   (to
 
 | Крейт | Строк (.rs) | Назначение |
 |--------|------------|------------|
-| `ozd-app` | ~5 248 | Бизнес-логика (pool, cache, CAR, erasure, placement…) |
+| `ozd-app` | ~5 247 | Бизнес-логика (pool, cache, CAR, erasure, placement…) |
 | `ozd-engine` | ~2 241 | Движок сегментов + property-тесты |
-| `ozd-ipfs` | ~1 163 | IPFS-слой + SigV4 + async-адаптер + тесты |
+| `ozd-ipfs` | ~1 322 | IPFS-слой + SigV4 + async-адаптер + e2e-тест |
 | `ozd-zfs` | ~952 | Обёртка над OpenZFS CLI |
 | `ozd-daemon` | ~795 | Точка входа демона |
 | `ozd-admin` | ~432 | Админ-API |
 | `ozd-bench` | ~335 | Бенчмарки |
 | `ozd-domain` | ~331 | Доменные типы |
-| **Итого .rs** | **~11 497** | |
+| **Итого .rs** | **~11 655** | |
 
 ### Документация и проектирование (`Wiki/`)
 
@@ -220,27 +220,27 @@ CID ──► placement(CID, topology) ──► [ShardId₁ .. ShardId_R]   (to
 |--------|-------|
 | Архитектура, планы, ADR | ~2 857 |
 | Arch_DDD (анализ 30+ систем) | ~12 747 |
-| Feynman-карточки (95 концептов) | ~3 692 |
-| Прочее (ROADMAP, KUBO, BENCH, WEEKLY-ARCS, GRAFANA…) | ~1 035 |
-| **Итого Wiki** | **~20 331** |
+| Feynman-карточки (96 концептов) | ~3 753 |
+| Прочее (ROADMAP, KUBO, BENCH, WEEKLY-ARCS, GRAFANA…) | ~1 125 |
+| **Итого Wiki** | **~20 482** |
 
 ### Инфраструктура (scripts + deployments)
 
 | Категория | Строк |
 |-----------|-------|
-| Docker (compose, Dockerfile, конфиги) | ~192 |
-| Scripts (gen_config, smoke) | ~165 |
+| Docker (compose, Dockerfile×2, конфиги) | ~230 |
+| Scripts (gen_config, smoke) | ~198 |
 | systemd + example.toml | ~131 |
-| **Итого infra** | **~488** |
+| **Итого infra** | **~559** |
 
 ### Общий итог
 
 | Категория | Строк |
 |-----------|-------|
-| Rust-код | ~11 497 |
-| Документация (Wiki + README) | ~20 331 |
-| Инфраструктура (Docker, scripts, deploy) | ~488 |
-| **Всего по проекту** | **~32 316** |
+| Rust-код | ~11 655 |
+| Документация (Wiki + README) | ~20 482 |
+| Инфраструктура (Docker, scripts, deploy) | ~559 |
+| **Всего по проекту** | **~32 696** |
 
 ## Лицензия
 
