@@ -51,7 +51,7 @@ async fn full_s3_lifecycle() {
     }
     assert_eq!(pool.get(&BlockKey::from("/blocks/sanity")).unwrap(), b"test");
 
-    let app = ozd_ipfs::router(pool.clone() as Arc<dyn BlockStore>, None);
+    let app = ozd_ipfs::router(pool.clone() as Arc<dyn BlockStore>, None, None);
 
     // PUT
     let resp = app

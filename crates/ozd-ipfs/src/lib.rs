@@ -12,6 +12,7 @@
 //! Kubo требует ключи в конфиге — подойдут любые). TODO Часть 3: SigV4.
 
 pub mod async_adapter;
+pub mod ratelimit;
 pub mod sigv4;
 
 use std::sync::Arc;
@@ -29,6 +30,7 @@ use sha2::{Digest, Sha256};
 
 use ozd_domain::{BlockKey, BlockStore, DomainError};
 pub use sigv4::SigV4Config;
+pub use ratelimit::{RateLimitConfig, RateLimiter};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -37,7 +39,12 @@ pub struct AppState {
 
 /// S3-шлюз. `auth = Some(..)` включает обязательный SigV4 (E13) на S3-маршрутах;
 /// `/healthz` всегда открыт. None — dev-режим (только loopback!).
-pub fn router(store: Arc<dyn BlockStore>, auth: Option<SigV4Config>) -> Router {
+/// `rate_limiter` — per-IP лимит запросов (W22); None = без лимита.
+pub fn router(
+    store: Arc<dyn BlockStore>,
+    auth: Option<SigV4Config>,
+    rate_limiter: Option<Arc<RateLimiter>>,
+) -> Router {
     let st = AppState { store };
     let mut s3 = Router::new()
         .route("/{bucket}", get(list_objects))
@@ -48,6 +55,9 @@ pub fn router(store: Arc<dyn BlockStore>, auth: Option<SigV4Config>) -> Router {
         .with_state(st);
     if let Some(cfg) = auth {
         s3 = s3.layer(axum::middleware::from_fn_with_state(Arc::new(cfg), sigv4_mw));
+    }
+    if let Some(limiter) = rate_limiter {
+        s3 = s3.layer(axum::middleware::from_fn_with_state(limiter, ratelimit::rate_limit_mw));
     }
     Router::new().route("/healthz", get(healthz)).merge(s3)
 }
