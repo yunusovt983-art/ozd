@@ -170,9 +170,23 @@ impl Pool {
         policy: Box<dyn PlacementPolicy>,
         cfg: PoolConfig,
     ) -> Self {
-        assert!(cfg.replicas >= 1 && cfg.write_quorum >= 1);
-        assert!(cfg.write_quorum <= cfg.replicas);
-        assert!(cfg.replicas <= shards.len(), "R must be <= number of disks");
+        // W5.3: информативные assert-сообщения (демон валидирует ДО вызова;
+        // assert — защита от ошибок в тестах/библиотечном коде)
+        assert!(
+            cfg.replicas >= 1 && cfg.write_quorum >= 1,
+            "Pool: replicas={} и write_quorum={} должны быть ≥ 1",
+            cfg.replicas, cfg.write_quorum
+        );
+        assert!(
+            cfg.write_quorum <= cfg.replicas,
+            "Pool: write_quorum={} > replicas={} (кворум не может быть больше R)",
+            cfg.write_quorum, cfg.replicas
+        );
+        assert!(
+            cfg.replicas <= shards.len(),
+            "Pool: replicas={} > число дисков {} (невозможно разместить R копий)",
+            cfg.replicas, shards.len()
+        );
         let n = shards.len();
         // E28: каждый шард оборачивается замером латентности put/get —
         // ВСЕ пути пула (чтение/запись/ремонт/scrub) кормят монитор
