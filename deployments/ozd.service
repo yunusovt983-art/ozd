@@ -1,0 +1,39 @@
+# W10.2: systemd-unit для ozd (OpenZFS Daemon)
+#
+# Установка:
+#   cp deployments/ozd.service /etc/systemd/system/
+#   systemctl daemon-reload
+#   systemctl enable --now ozd
+#
+# Логи: journalctl -u ozd -f
+
+[Unit]
+Description=OpenZFS Daemon — IPFS blockstore on 60 HDD
+Documentation=https://github.com/yunusovt983-art/ozd
+After=network-online.target zfs-mount.service
+Wants=network-online.target
+Requires=zfs-mount.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ozd --config /etc/ozd/ozd.toml
+Restart=on-failure
+RestartSec=5s
+
+# Безопасность
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/data
+# Для ZFS-команд (zpool/zfs) — требуется sudo NOPASSWD или CAP_SYS_ADMIN
+# AmbientCapabilities=CAP_SYS_ADMIN
+
+# Ресурсы: не ограничиваем IO (60 HDD — это весь смысл)
+LimitNOFILE=1048576
+LimitMEMLOCK=infinity
+
+# Окружение
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=multi-user.target

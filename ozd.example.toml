@@ -37,6 +37,8 @@ bg_fg_busy_ops = 50.0           # foreground занят при > N оп/с (puts
 # ec_parity = 2                 # переживает M отказов; мелочь (< ec_min_size)
 # ec_min_size = 65536           # всегда зеркалом R=2; кворум кусков K+1
 # ec_write_quorum = 5
+# migrate_interval_secs = 3600  # E21 (#145): фоновая миграция mirror→erasure, шаг раз в час;
+# migrate_keys_per_cycle = 2000 # 0 = выключена (только вручную: POST /admin/migrate)
 # blake3_outboard = true        # E23 (#79): BLAKE3-меркл outboard для тел >= ob_min_size
 # ob_min_size = 262144          # → Range GET верифицируется против write-time root
                                 # (x-ozd-verified: blake3; ~0.4% места; сильнее CRC32)
