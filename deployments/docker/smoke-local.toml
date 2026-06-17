@@ -1,0 +1,12 @@
+listen = "127.0.0.1:9100"
+replicas = 2
+write_quorum = 2
+
+[[disks]]
+data_path = "/Volumes/Kingston/OpenZFS_Daemon/target/smoke-d0"
+
+[[disks]]
+data_path = "/Volumes/Kingston/OpenZFS_Daemon/target/smoke-d1"
+
+[[disks]]
+data_path = "/Volumes/Kingston/OpenZFS_Daemon/target/smoke-d2"

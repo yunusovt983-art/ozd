@@ -1,0 +1,39 @@
+# W9.1: Kubo + go-ds-s3 → ozd (интеграционный smoke без сервера)
+#
+# Запуск: docker compose up --build
+# Тест:   ./scripts/kubo_smoke.sh
+#
+# Архитектура:
+#   ozd (порт 9100) ← S3 API ← Kubo go-ds-s3 плагин (блоки /blocks/)
+#   Kubo API: порт 5001 (ipfs add/cat/pin)
+#
+# ozd работает с 3 tmpfs-дисками (данные в RAM — быстро, без персистентности).
+
+services:
+  ozd:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.ozd
+    ports:
+      - "9100:9100"
+    tmpfs:
+      - /data/disk0
+      - /data/disk1
+      - /data/disk2
+    environment:
+      - RUST_LOG=info
+
+  kubo:
+    image: ipfs/kubo:v0.32.1
+    depends_on:
+      ozd:
+        condition: service_started
+    ports:
+      - "5001:5001"  # API
+      - "4001:4001"  # Swarm
+      - "8080:8080"  # Gateway
+    environment:
+      - IPFS_PROFILE=server
+    volumes:
+      - ./kubo-init.sh:/container-init.d/001-s3ds.sh:ro
+    entrypoint: ["/bin/sh", "-c", "chmod +x /container-init.d/001-s3ds.sh && /container-init.d/001-s3ds.sh && ipfs daemon --migrate"]

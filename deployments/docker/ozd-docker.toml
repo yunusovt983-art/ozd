@@ -1,0 +1,26 @@
+# W9.1: конфиг ozd для Docker-smoke (3 tmpfs-диска, mirror R=2)
+listen = "0.0.0.0:9100"
+replicas = 2
+write_quorum = 2
+redundancy = "mirror"
+gc_interval_secs = 60
+scrub_interval_secs = 0
+zfs_health_interval_secs = 0
+
+[auth]
+access_key = "minioadmin"
+secret_key = "minioadmin"
+
+[engine]
+segment_max_size = 67108864  # 64МБ (tmpfs — не гигабайты)
+inline_min = 4096
+fsync_items = 64
+
+[[disks]]
+data_path = "/data/disk0"
+
+[[disks]]
+data_path = "/data/disk1"
+
+[[disks]]
+data_path = "/data/disk2"
