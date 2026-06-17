@@ -3,10 +3,75 @@
 
 //! E14: операционные метрики пула (lock-free атомики, Prometheus-text).
 //! Без внешних crates: счётчики + суммы латентностей (avg/rate — в PromQL).
+//! W4.1: histogram-бакеты для put/get латентности (стандартные Prometheus бакеты).
 
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
 use ozd_domain::GcReport;
+
+/// Стандартные Prometheus histogram-бакеты (верхняя граница, микросекунды).
+const HIST_BUCKETS_US: &[u64] = &[
+    1_000,      // 1ms
+    5_000,      // 5ms
+    10_000,     // 10ms
+    25_000,     // 25ms
+    50_000,     // 50ms
+    100_000,    // 100ms
+    250_000,    // 250ms
+    500_000,    // 500ms
+    1_000_000,  // 1s
+    2_500_000,  // 2.5s
+    5_000_000,  // 5s
+    10_000_000, // 10s
+];
+
+/// Lock-free histogram: массив бакетов-счётчиков (AtomicU64).
+pub struct Histogram {
+    buckets: [AtomicU64; 12],
+    count: AtomicU64,
+    sum_us: AtomicU64,
+}
+
+impl Default for Histogram {
+    fn default() -> Self {
+        Self {
+            buckets: Default::default(),
+            count: AtomicU64::new(0),
+            sum_us: AtomicU64::new(0),
+        }
+    }
+}
+
+impl Histogram {
+    /// Записать наблюдение (микросекунды).
+    pub fn observe(&self, us: u64) {
+        self.count.fetch_add(1, Relaxed);
+        self.sum_us.fetch_add(us, Relaxed);
+        for (i, &bound) in HIST_BUCKETS_US.iter().enumerate() {
+            if us <= bound {
+                self.buckets[i].fetch_add(1, Relaxed);
+                return;
+            }
+        }
+        // > 10s — в последний бакет (inf логически)
+        self.buckets[HIST_BUCKETS_US.len() - 1].fetch_add(1, Relaxed);
+    }
+
+    /// Prometheus text: cumulative бакеты + sum + count.
+    fn prometheus(&self, name: &str, out: &mut String) {
+        out.push_str(&format!("# TYPE {name} histogram\n"));
+        let mut cum = 0u64;
+        for (i, &bound) in HIST_BUCKETS_US.iter().enumerate() {
+            cum += self.buckets[i].load(Relaxed);
+            let le = bound as f64 / 1_000_000.0;
+            out.push_str(&format!("{name}_bucket{{le=\"{le}\"}} {cum}\n"));
+        }
+        let total = self.count.load(Relaxed);
+        out.push_str(&format!("{name}_bucket{{le=\"+Inf\"}} {total}\n"));
+        out.push_str(&format!("{name}_sum {:.6}\n", self.sum_us.load(Relaxed) as f64 / 1e6));
+        out.push_str(&format!("{name}_count {total}\n"));
+    }
+}
 
 #[derive(Default)]
 pub struct OpsMetrics {
@@ -14,10 +79,14 @@ pub struct OpsMetrics {
     pub puts: AtomicU64,
     pub put_errors: AtomicU64,
     pub put_micros: AtomicU64,
+    /// W4.1: histogram PUT-латентности
+    pub put_hist: Histogram,
     pub gets: AtomicU64,
     pub get_not_found: AtomicU64,
     pub get_errors: AtomicU64,
     pub get_micros: AtomicU64,
+    /// W4.1: histogram GET-латентности
+    pub get_hist: Histogram,
     pub deletes: AtomicU64,
     // отказоустойчивость записи/чтения
     pub hedged_reads: AtomicU64,
@@ -86,6 +155,7 @@ impl OpsMetrics {
             "# TYPE ozd_put_seconds_sum counter\nozd_put_seconds_sum {:.6}\n",
             self.put_micros.load(Relaxed) as f64 / 1e6
         ));
+        self.put_hist.prometheus("ozd_put_duration_seconds", &mut o);
         c("ozd_gets_total", self.gets.load(Relaxed), &mut o);
         c("ozd_get_not_found_total", self.get_not_found.load(Relaxed), &mut o);
         c("ozd_get_errors_total", self.get_errors.load(Relaxed), &mut o);
@@ -93,6 +163,7 @@ impl OpsMetrics {
             "# TYPE ozd_get_seconds_sum counter\nozd_get_seconds_sum {:.6}\n",
             self.get_micros.load(Relaxed) as f64 / 1e6
         ));
+        self.get_hist.prometheus("ozd_get_duration_seconds", &mut o);
         c("ozd_deletes_total", self.deletes.load(Relaxed), &mut o);
         c("ozd_hedged_reads_total", self.hedged_reads.load(Relaxed), &mut o);
         c("ozd_handoff_writes_total", self.handoff_writes.load(Relaxed), &mut o);

@@ -1500,7 +1500,9 @@ impl BlockStore for Pool {
         use std::sync::atomic::Ordering::Relaxed;
         let t0 = Instant::now();
         let r = self.put_inner(key, data);
-        self.metrics.put_micros.fetch_add(t0.elapsed().as_micros() as u64, Relaxed);
+        let el_us = t0.elapsed().as_micros() as u64;
+        self.metrics.put_micros.fetch_add(el_us, Relaxed);
+        self.metrics.put_hist.observe(el_us);
         match &r {
             Ok(()) => self.metrics.puts.fetch_add(1, Relaxed),
             Err(_) => self.metrics.put_errors.fetch_add(1, Relaxed),
@@ -1513,7 +1515,9 @@ impl BlockStore for Pool {
         let t0 = Instant::now();
         let r = self.get_inner(key);
         let el = t0.elapsed();
-        self.metrics.get_micros.fetch_add(el.as_micros() as u64, Relaxed);
+        let el_us = el.as_micros() as u64;
+        self.metrics.get_micros.fetch_add(el_us, Relaxed);
+        self.metrics.get_hist.observe(el_us);
         match &r {
             Ok(_) => {
                 self.read_lat.record(el); // E27: пища для p99-порога
