@@ -307,6 +307,74 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 | W14 integration-тест CI | W16 flaky fix | W18 capacity planning | Kubo-стенд на полке (E30) |
 | W15 criterion bench | W17 admin JSON v2 | | Multi-node (Ч3) |
 
+---
+
+## Неделя 5 (15–21 июля 2026)
+
+### Арка W19 — Admin API: typed responses с derive(Serialize) (2 дня)
+
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W19.1 | ozd-admin/src/types.rs | Создать модуль response-типов: `GcResponse`, `ScrubResponse`, `ResilverResponse`, `UsageResponse` с `#[derive(Serialize)]` | ⬜ |
+| W19.2 | ozd-admin/src/lib.rs | Переписать хэндлеры gc/scrub/resilver/usage на `axum::Json<T>` вместо format!-строк | ⬜ |
+| W19.3 | ozd-admin/src/lib.rs | Убрать `serde_json_like` модуль — больше не нужен | ⬜ |
+
+**Критерий:** все /admin/ ответы через `axum::Json<T>`, типы автоматически сериализуются; ручной format! JSON удалён.
+
+---
+
+### Арка W20 — Observability v2: tracing-структурированные логи (1 день)
+
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W20.1 | ozd-daemon/main.rs | `tracing_subscriber::fmt().json()` — JSON-логи для production (конфиг `log_format: text|json`) | ⬜ |
+| W20.2 | ozd-app/pool.rs | Добавить `tracing::instrument` на put/get/resilver_step (span с key/shard) | ⬜ |
+
+**Критерий:** `RUST_LOG=info OZD_LOG_FORMAT=json ./ozd` → структурированные JSON-логи; spans видны в Jaeger/Loki.
+
+---
+
+### Арка W21 — Graceful shutdown v2: drain + timeout (1 день)
+
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W21.1 | ozd-daemon/main.rs | SIGTERM → drain: перестать принимать новые PUT, дождать in-flight (timeout 30с), flush, exit | ⬜ |
+| W21.2 | ozd-app/pool.rs | `Pool::shutdown()` — установить флаг, put возвращает ошибку; get продолжает | ⬜ |
+
+**Критерий:** `kill -TERM <pid>` → демон завершается чисто за ≤30с; клиенты получают 503 на PUT.
+
+---
+
+### Арка W22 — Rate-limiter для S3 API (1 день)
+
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W22.1 | ozd-ipfs/src/lib.rs | Tower middleware: rate-limit по IP (конфиг `max_rps: u32`); 429 Too Many Requests | ⬜ |
+| W22.2 | ozd-daemon/main.rs | Конфиг `rate_limit_rps` в toml; 0 = выключен | ⬜ |
+
+**Критерий:** при max_rps=100 101-й запрос в секунду → 429; /healthz и /metrics — без лимита.
+
+---
+
+### Арка W23 — Backup: snapshot + export (1 день)
+
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W23.1 | ozd-admin/src/lib.rs | POST /admin/snapshot → hardlink sealed-сегментов в `snapshots/<id>/` (мгновенный) | ⬜ |
+| W23.2 | ozd-admin/src/lib.rs | GET /admin/snapshots → список снимков с timestamp/size | ⬜ |
+| W23.3 | scripts/backup.sh | Скрипт: snapshot → tar → upload S3/rsync (оператор-забота) | ⬜ |
+
+**Критерий:** `POST /admin/snapshot` < 1с (hardlinks); `backup.sh` архивирует снимок.
+
+---
+
+## Приоритизация (MoSCoW) — Неделя 5
+
+| Must | Should | Could | Won't (эта неделя) |
+|------|--------|-------|---------------------|
+| W19 typed admin API | W21 graceful shutdown v2 | W23 backup/snapshot | Multi-node (Ч3) |
+| W20 JSON-логи | W22 rate-limiter | | Kubo-стенд на полке |
+
 1. **async/await переход Pool** — сейчас sync + thread::spawn. Для multi-node (Ч3) нужен настоящий async.
 2. **Property-тесты** — proptest для segment format (PLAN Ф1). Нет ни одного.
 3. **Benchmarks CI** — criterion + regression detection.
