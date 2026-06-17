@@ -55,6 +55,7 @@ const T_CURSOR: TableDefinition<&[u8], &[u8]> = TableDefinition::new("cursor");
 /// Значение addr-таблицы: v2 28Б LE
 /// (seg u32 | off u64 | stored_len u32 | key_len u16 | crc u32 | logical u32 | flags u16),
 /// v3 36Б = v2 + obj_logical u64 (длина строки — дискриминатор версии).
+#[inline]
 fn encode_addr(e: &AddrEntry) -> Vec<u8> {
     let mut v = Vec::with_capacity(36);
     v.extend_from_slice(&e.addr.seg_id.to_le_bytes());
@@ -70,6 +71,7 @@ fn encode_addr(e: &AddrEntry) -> Vec<u8> {
     v
 }
 
+#[inline]
 fn decode_addr(v: &[u8]) -> Option<AddrEntry> {
     // 22Б = legacy v1 (без сжатия: logical == stored, flags = 0);
     // 28Б = v2; 36Б = v3 (+obj_logical, E21b)
@@ -267,6 +269,7 @@ impl DiskEngine {
         }
     }
 
+    #[inline]
     fn lookup(&self, key: &BlockKey) -> DomainResult<Lookup> {
         let tx = self.db.begin_read().map_err(io_err)?;
         if let Ok(ti) = tx.open_table(T_INLINE) {
