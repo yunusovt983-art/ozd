@@ -122,3 +122,33 @@ pub struct ZfsHealthItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
+
+#[derive(Serialize)]
+pub struct StructureItem {
+    pub shard: usize,
+    pub healthy: bool,
+    pub segments: usize,
+    pub missing: Vec<u32>,
+    pub keys_at_risk: u64,
+    pub orphans: Vec<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ZfsScrubItem {
+    pub shard: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scrub: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct BallastItem {
+    pub shard: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub released: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}

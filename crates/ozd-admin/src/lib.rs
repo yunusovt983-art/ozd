@@ -89,9 +89,9 @@ async fn run_scrub(
 async fn zfs_scrub(
     State(st): State<AdminState>,
     Query(q): Query<HashMap<String, String>>,
-) -> serde_json_like::Value {
+) -> axum::Json<Vec<types::ZfsScrubItem>> {
     let want: Option<usize> = q.get("shard").and_then(|s| s.parse().ok());
-    let mut out = Vec::new();
+    let mut items = Vec::new();
     for (i, zp) in st.zfs.iter().enumerate() {
         if want.is_some_and(|w| w != i) {
             continue;
@@ -99,12 +99,12 @@ async fn zfs_scrub(
         let Some(zp) = zp.clone() else { continue };
         let r = tokio::task::spawn_blocking(move || zp.scrub_start()).await;
         match r {
-            Ok(Ok(())) => out.push(format!("{{\"shard\":{i},\"scrub\":\"started\"}}")),
-            Ok(Err(e)) => out.push(json_shard_err(i, &e)),
-            Err(e) => out.push(json_shard_err(i, &e)),
+            Ok(Ok(())) => items.push(types::ZfsScrubItem { shard: i, scrub: Some("started".into()), error: None }),
+            Ok(Err(e)) => items.push(types::ZfsScrubItem { shard: i, scrub: None, error: Some(e.to_string()) }),
+            Err(e) => items.push(types::ZfsScrubItem { shard: i, scrub: None, error: Some(e.to_string()) }),
         }
     }
-    serde_json_like::Value(format!("[{}]", out.join(",")))
+    axum::Json(items)
 }
 
 /// POST /admin/car/import?path=/x.car[&prefix=/blocks/&parallelism=8&verify=true]
@@ -217,19 +217,19 @@ async fn run_migrate(
 async fn ballast_release(
     State(st): State<AdminState>,
     Query(q): Query<HashMap<String, String>>,
-) -> serde_json_like::Value {
+) -> axum::Json<Vec<types::BallastItem>> {
     let want: Option<usize> = q.get("shard").and_then(|s| s.parse().ok());
-    let mut out = Vec::new();
+    let mut items = Vec::new();
     for (i, s) in st.shards.iter().enumerate() {
         if want.is_some_and(|w| w != i) {
             continue;
         }
         match s.release_ballast() {
-            Ok(b) => out.push(format!("{{\"shard\":{i},\"released\":{b}}}")),
-            Err(e) => out.push(json_shard_err(i, &e)),
+            Ok(b) => items.push(types::BallastItem { shard: i, released: Some(b), error: None }),
+            Err(e) => items.push(types::BallastItem { shard: i, released: None, error: Some(e.to_string()) }),
         }
     }
-    serde_json_like::Value(format!("[{}]", out.join(",")))
+    axum::Json(items)
 }
 
 /// W18: GET /admin/capacity — ёмкость и прогноз заполнения.
@@ -317,25 +317,32 @@ async fn metrics(State(st): State<AdminState>) -> axum::response::Response {
 
 /// GET /admin/structure — структурный чек индекс↔сегменты по всем шардам
 /// (без чтения тел; порт Go DetectMissingPacks).
-async fn structure(State(st): State<AdminState>) -> serde_json_like::Value {
-    let mut out = Vec::new();
+async fn structure(State(st): State<AdminState>) -> axum::Json<Vec<types::StructureItem>> {
+    let mut items = Vec::new();
     for (i, s) in st.shards.iter().enumerate() {
         let s = s.clone();
         let r = tokio::task::spawn_blocking(move || s.verify_structure()).await;
         match r {
-            Ok(Ok(rep)) => out.push(format!(
-                "{{\"shard\":{i},\"healthy\":{},\"segments\":{},\"missing\":{:?},\"keys_at_risk\":{},\"orphans\":{:?}}}",
-                rep.is_healthy(),
-                rep.segments_referenced,
-                rep.segments_missing,
-                rep.keys_at_risk,
-                rep.orphan_segments
-            )),
-            Ok(Err(e)) => out.push(json_shard_err(i, &e)),
-            Err(e) => out.push(json_shard_err(i, &e)),
+            Ok(Ok(rep)) => items.push(types::StructureItem {
+                shard: i,
+                healthy: rep.is_healthy(),
+                segments: rep.segments_referenced,
+                missing: rep.segments_missing,
+                keys_at_risk: rep.keys_at_risk,
+                orphans: rep.orphan_segments,
+                error: None,
+            }),
+            Ok(Err(e)) => items.push(types::StructureItem {
+                shard: i, healthy: false, segments: 0, missing: vec![],
+                keys_at_risk: 0, orphans: vec![], error: Some(e.to_string()),
+            }),
+            Err(e) => items.push(types::StructureItem {
+                shard: i, healthy: false, segments: 0, missing: vec![],
+                keys_at_risk: 0, orphans: vec![], error: Some(e.to_string()),
+            }),
         }
     }
-    serde_json_like::Value(format!("[{}]", out.join(",")))
+    axum::Json(items)
 }
 
 /// GET /admin/zfs — здоровье ZFS-пулов + метрики (#150) + дрифт-аудит (#148).
@@ -470,51 +477,4 @@ async fn run_gc(
         }
     }
     axum::Json(items)
-}
-
-/// W17: используем serde_json для гарантированно валидного JSON.
-mod serde_json_like {
-    pub struct Value(pub String);
-    impl axum::response::IntoResponse for Value {
-        fn into_response(self) -> axum::response::Response {
-            // Валидируем JSON перед отдачей — ловим баги на этапе ответа
-            match serde_json::from_str::<serde_json::Value>(&self.0) {
-                Ok(v) => axum::Json(v).into_response(),
-                Err(_) => {
-                    // fallback: отдать как text/plain чтобы не молча отдать мусор
-                    (
-                        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                        [(axum::http::header::CONTENT_TYPE, "text/plain")],
-                        format!("invalid json generated: {}", &self.0[..self.0.len().min(200)]),
-                    ).into_response()
-                }
-            }
-        }
-    }
-}
-
-/// W1.4: экранирование строки для безопасного встраивания в JSON-значение.
-fn json_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 8);
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if c < '\x20' => { let _ = std::fmt::Write::write_fmt(&mut out, format_args!("\\u{:04x}", c as u32)); }
-            c => out.push(c),
-        }
-    }
-    out
-}
-
-/// W1.4: JSON-ошибка с экранированием сообщения.
-fn json_shard_err(shard: usize, e: &dyn std::fmt::Display) -> String {
-    format!("{{\"shard\":{shard},\"error\":\"{}\"}}", json_escape(&e.to_string()))
-}
-
-fn json_err(e: &dyn std::fmt::Display) -> serde_json_like::Value {
-    serde_json_like::Value(format!("{{\"error\":\"{}\"}}", json_escape(&e.to_string())))
 }
