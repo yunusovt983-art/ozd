@@ -186,13 +186,74 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 ---
 
-## Приоритизация (MoSCoW) — Неделя 2
+## Неделя 3 (1–7 июля 2026)
+
+### Арка W9 — Kubo-интеграция без сервера (2 дня)
+
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W9.1 | docker-compose.yml | Docker-compose: Kubo + go-ds-s3 → ozd (loopback, 3 диска tmpfs) | ⬜ |
+| W9.2 | scripts/kubo_smoke.sh | Smoke-тест: `ipfs add` файл → `ipfs cat` бит-в-бит → `ipfs pin ls` → `ipfs repo gc` | ⬜ |
+| W9.3 | Wiki/KUBO-INTEGRATION.md | Обновить документ: фактический конфиг go-ds-s3, SigV4-ключи, endpoint | ⬜ |
+
+**Критерий:** `docker compose up` → Kubo пишет/читает блоки через ozd; smoke-скрипт зелёный.
+
+---
+
+### Арка W10 — Генератор конфига + systemd (1 день)
+
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W10.1 | scripts/gen_config.sh | Скрипт: `zpool list -H` → генерирует `ozd.toml` с секциями `[[disks]]` | ⬜ |
+| W10.2 | deployments/ozd.service | systemd-unit: `ExecStart=ozd --config /etc/ozd/ozd.toml`, restart=on-failure | ⬜ |
+| W10.3 | ozd.example.toml | Обновить пример: все новые поля W1–W8 (disk_slow, adaptive_hedge, cache и т.д.) | ⬜ |
+
+**Критерий:** на dev-машине `gen_config.sh` создаёт валидный toml; `systemctl start ozd` работает.
+
+---
+
+### Арка W11 — reed-solomon-simd + EC-bench (1 день)
+
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W11.1 | Cargo.toml | Заменить `reed-solomon-erasure` → `reed-solomon-simd` (AVX2/NEON, 5–8× быстрее) | ⬜ |
+| W11.2 | ozd-app/erasure.rs | Адаптировать API (encode/reconstruct отличаются) | ⬜ |
+| W11.3 | docs/BENCH.md | Замер: EC 4+2 encode/decode до и после (µs на 256КиБ блок) | ⬜ |
+
+**Критерий:** все EC-тесты зелёные; bench показывает ≥3× ускорение encode на x86.
+
+---
+
+### Арка W12 — Hardening: parking_lot в ozd-zfs + HealQueue shrink (1 день)
+
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W12.1 | ozd-zfs/Cargo.toml + runner.rs | Заменить `parking_lot_lite` → `parking_lot` (унификация с остальными крейтами) | ⬜ |
+| W12.2 | ozd-app/pool.rs | HealQueue: `shrink_to_fit()` при pop, когда heap.len() > 2× dedup.len() | ⬜ |
+| W12.3 | ozd-engine/lib.rs | `DomainError::Corrupt` при CRC-mismatch вместо `IntegrityViolation(String)` | ⬜ |
+
+**Критерий:** `parking_lot_lite` модуль удалён; HealQueue не растёт unbounded; corrupt-ошибки матчатся по варианту.
+
+---
+
+### Арка W13 — Документация: README v2 + CONTRIBUTING (1 день)
+
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W13.1 | README.md | Секция «Quick Start» (cargo build, запуск, первый PUT/GET через curl) | ⬜ |
+| W13.2 | CONTRIBUTING.md | Гайд для контрибьюторов: структура крейтов, как запустить тесты, DDD-правила | ⬜ |
+| W13.3 | Wiki/WEEKLY-ARCS.md | Обновить статусы W9–W13, подвести итог 3 недель | ⬜ |
+
+**Критерий:** новый контрибьютор может запустить проект за 5 минут по README.
+
+---
+
+## Приоритизация (MoSCoW) — Неделя 3
 
 | Must | Should | Could | Won't (эта неделя) |
 |------|--------|-------|---------------------|
-| W5 error taxonomy | W7 proptest+CI | W8 async port | Per-disk worker pool (W3) |
-| W5 config validation | W7 bench smoke | | Multi-node (Ч3) |
-| W6 GC sweep кэш | | | Kubo-стенд (E30, нужен сервер) |
+| W9 Kubo-smoke (docker) | W11 reed-solomon-simd | W13 docs | Multi-node (Ч3) |
+| W10 gen_config + systemd | W12 hardening | | Стенд на полке (E31/E32) |
 
 1. **async/await переход Pool** — сейчас sync + thread::spawn. Для multi-node (Ч3) нужен настоящий async.
 2. **Property-тесты** — proptest для segment format (PLAN Ф1). Нет ни одного.
