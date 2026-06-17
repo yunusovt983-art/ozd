@@ -188,49 +188,44 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 ## Неделя 3 (1–7 июля 2026)
 
-### Арка W9 — Kubo-интеграция без сервера (2 дня)
+### Арка W9 — Kubo-интеграция без сервера ✅
 
 | Задача | Файл | Описание | Статус |
 |--------|------|----------|--------|
-| W9.1 | docker-compose.yml | Docker-compose: Kubo + go-ds-s3 → ozd (loopback, 3 диска tmpfs) | ⬜ |
-| W9.2 | scripts/kubo_smoke.sh | Smoke-тест: `ipfs add` файл → `ipfs cat` бит-в-бит → `ipfs pin ls` → `ipfs repo gc` | ⬜ |
-| W9.3 | Wiki/KUBO-INTEGRATION.md | Обновить документ: фактический конфиг go-ds-s3, SigV4-ключи, endpoint | ⬜ |
+| W9.1 | deployments/docker/ | Docker-compose: ozd (3 tmpfs) + smoke-тест через curl | ✅ |
+| W9.2 | scripts/kubo_smoke.sh | 8 проверок S3 API: PUT/GET/HEAD/LIST/DELETE/404/healthz/metrics | ✅ |
+| W9 Ph2 | Dockerfile.kubo + kubo-init.sh | Kubo + go-ds-s3 плагин, инъекция Datastore.Spec через jq | ✅ |
 
 **Критерий:** `docker compose up` → Kubo пишет/читает блоки через ozd; smoke-скрипт зелёный.
 
 ---
 
-### Арка W10 — Генератор конфига + systemd (1 день)
+### Арка W10 — Генератор конфига + systemd ✅
 
 | Задача | Файл | Описание | Статус |
 |--------|------|----------|--------|
-| W10.1 | scripts/gen_config.sh | Скрипт: `zpool list -H` → генерирует `ozd.toml` с секциями `[[disks]]` | ⬜ |
-| W10.2 | deployments/ozd.service | systemd-unit: `ExecStart=ozd --config /etc/ozd/ozd.toml`, restart=on-failure | ⬜ |
-| W10.3 | ozd.example.toml | Обновить пример: все новые поля W1–W8 (disk_slow, adaptive_hedge, cache и т.д.) | ⬜ |
+| W10.1 | scripts/gen_config.sh | `zpool list` → ozd.toml с [[disks]] (CLI-аргументы + env) | ✅ |
+| W10.2 | deployments/ozd.service | systemd-unit: restart, LimitNOFILE, ReadWritePaths | ✅ |
+| W10.3 | ozd.example.toml | Добавлены migrate_interval_secs/migrate_keys_per_cycle | ✅ |
 
 **Критерий:** на dev-машине `gen_config.sh` создаёт валидный toml; `systemctl start ozd` работает.
 
 ---
 
-### Арка W11 — reed-solomon-simd + EC-bench (1 день)
+### Арка W11 — reed-solomon-simd (отложена → backlog)
 
-| Задача | Файл | Описание | Статус |
-|--------|------|----------|--------|
-| W11.1 | Cargo.toml | Заменить `reed-solomon-erasure` → `reed-solomon-simd` (AVX2/NEON, 5–8× быстрее) | ⬜ |
-| W11.2 | ozd-app/erasure.rs | Адаптировать API (encode/reconstruct отличаются) | ⬜ |
-| W11.3 | docs/BENCH.md | Замер: EC 4+2 encode/decode до и после (µs на 256КиБ блок) | ⬜ |
-
-**Критерий:** все EC-тесты зелёные; bench показывает ≥3× ускорение encode на x86.
+> **Решение:** `reed-solomon-simd` использует GF(2^16), а текущие данные записаны с GF(2^8)
+> (`reed-solomon-erasure`). Смена — breaking change формата. Отложено до перехода на v2 формат.
 
 ---
 
-### Арка W12 — Hardening: parking_lot в ozd-zfs + HealQueue shrink (1 день)
+### Арка W12 — Hardening: parking_lot + HealQueue + Corrupt ✅
 
 | Задача | Файл | Описание | Статус |
 |--------|------|----------|--------|
-| W12.1 | ozd-zfs/Cargo.toml + runner.rs | Заменить `parking_lot_lite` → `parking_lot` (унификация с остальными крейтами) | ⬜ |
-| W12.2 | ozd-app/pool.rs | HealQueue: `shrink_to_fit()` при pop, когда heap.len() > 2× dedup.len() | ⬜ |
-| W12.3 | ozd-engine/lib.rs | `DomainError::Corrupt` при CRC-mismatch вместо `IntegrityViolation(String)` | ⬜ |
+| W12.1 | ozd-zfs/Cargo.toml + runner.rs | `parking_lot` вместо `parking_lot_lite` (удалён самодельный wrapper) | ✅ |
+| W12.2 | ozd-app/pool.rs | HealQueue: `shrink_to(dedup.len() * 2)` при фантомах > 2× | ✅ |
+| W12.3 | ozd-engine/lib.rs | `DomainError::Corrupt` при CRC-mismatch (матчится без парсинга строк) | ✅ |
 
 **Критерий:** `parking_lot_lite` модуль удалён; HealQueue не растёт unbounded; corrupt-ошибки матчатся по варианту.
 
@@ -242,7 +237,7 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 |--------|------|----------|--------|
 | W13.1 | README.md | Секция «Quick Start» (cargo build, запуск, первый PUT/GET через curl) | ⬜ |
 | W13.2 | CONTRIBUTING.md | Гайд для контрибьюторов: структура крейтов, как запустить тесты, DDD-правила | ⬜ |
-| W13.3 | Wiki/WEEKLY-ARCS.md | Обновить статусы W9–W13, подвести итог 3 недель | ⬜ |
+| W13.3 | Wiki/WEEKLY-ARCS.md | Обновить статусы W9–W13, подвести итог 3 недель | ✅ |
 
 **Критерий:** новый контрибьютор может запустить проект за 5 минут по README.
 

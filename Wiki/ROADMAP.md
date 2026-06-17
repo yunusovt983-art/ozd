@@ -78,6 +78,10 @@
 
 ## Арка 8 — Реальное железо: стенд и продакшен ⬜ (нужен сервер)
 
+> **Предваряющие Weekly Sprints (W1–W12):** degraded-start, ZFS-таймауты, zero-copy put,
+> histogram-метрики, Grafana, error-taxonomy, GC-оптимизация, proptest, CI, AsyncBlockStore,
+> Docker+Kubo интеграция, gen_config, systemd, hardening. См. [WEEKLY-ARCS.md](WEEKLY-ARCS.md).
+
 | Эпик | Содержание | Критерий приёмки | Статус |
 |---|---|---|---|
 | E30 Kubo-стенд (= E15) | реальный Kubo+go-ds-s3 → ozd по KUBO-INTEGRATION: SigV4-канонизация, ipfs add/cat/pin/gc, первый реальный hit-rate СуперДиска | `ipfs add` файла → `ipfs cat` бит-в-бит; блоки видны в /metrics; sigv4 0 отказов | ⬜ |
