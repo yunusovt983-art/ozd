@@ -169,3 +169,10 @@ pub struct SnapshotListItem {
     pub segments: usize,
     pub bytes: u64,
 }
+
+#[derive(Serialize)]
+pub struct SnapshotDeleteResponse {
+    pub id: String,
+    pub deleted_files: usize,
+    pub deleted_dirs: usize,
+}

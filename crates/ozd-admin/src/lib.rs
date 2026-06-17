@@ -49,7 +49,7 @@ pub fn router(
         .route("/admin/car/import", post(car_import))
         .route("/admin/car/export", post(car_export))
         .route("/admin/capacity", get(capacity_report))
-        .route("/admin/snapshot", post(create_snapshot))
+        .route("/admin/snapshot", post(create_snapshot).delete(delete_snapshot))
         .route("/admin/snapshots", get(list_snapshots))
         .route("/metrics", get(metrics))
         .with_state(AdminState { shards, pool, gc_discard_ratio, zfs, data_paths })
@@ -598,6 +598,59 @@ async fn list_snapshots(State(st): State<AdminState>) -> axum::response::Respons
     .await;
     match res {
         Ok(items) => axum::Json(items).into_response(),
+        Err(e) => axum::Json(types::ErrorResponse::new(e)).into_response(),
+    }
+}
+
+/// W25: DELETE /admin/snapshot?id=X — удалить snapshot со всех шардов.
+async fn delete_snapshot(
+    State(st): State<AdminState>,
+    Query(q): Query<HashMap<String, String>>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let Some(id) = q.get("id").cloned() else {
+        return (axum::http::StatusCode::BAD_REQUEST,
+            axum::Json(types::ErrorResponse::new("id parameter required"))).into_response();
+    };
+    // basic validation: id должен быть непустым и без path-traversal
+    if id.is_empty() || id.contains('/') || id.contains("..") {
+        return (axum::http::StatusCode::BAD_REQUEST,
+            axum::Json(types::ErrorResponse::new("invalid snapshot id"))).into_response();
+    }
+    let data_paths = st.data_paths.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        let mut deleted_files = 0usize;
+        let mut deleted_dirs = 0usize;
+        let mut found = false;
+        for dp in &data_paths {
+            let snap_dir = dp.join("snapshots").join(&id);
+            if !snap_dir.is_dir() {
+                continue;
+            }
+            found = true;
+            // удалить все файлы в snapshot-директории
+            if let Ok(rd) = std::fs::read_dir(&snap_dir) {
+                for ent in rd.flatten() {
+                    if std::fs::remove_file(ent.path()).is_ok() {
+                        deleted_files += 1;
+                    }
+                }
+            }
+            // удалить саму директорию
+            if std::fs::remove_dir(&snap_dir).is_ok() {
+                deleted_dirs += 1;
+            }
+        }
+        if !found {
+            return Err("snapshot not found");
+        }
+        Ok(types::SnapshotDeleteResponse { id, deleted_files, deleted_dirs })
+    })
+    .await;
+    match res {
+        Ok(Ok(r)) => axum::Json(r).into_response(),
+        Ok(Err(msg)) => (axum::http::StatusCode::NOT_FOUND,
+            axum::Json(types::ErrorResponse::new(msg))).into_response(),
         Err(e) => axum::Json(types::ErrorResponse::new(e)).into_response(),
     }
 }
