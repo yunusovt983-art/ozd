@@ -7,6 +7,7 @@
 pub mod types;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::{
@@ -24,6 +25,8 @@ pub struct AdminState {
     pub gc_discard_ratio: f64,
     /// ZFS-пул на шард (None = шард не на ZFS / не сконфигурирован)
     pub zfs: Vec<Option<ozd_zfs::ZfsPool>>,
+    /// W23: data_path каждого шарда (для snapshot-hardlinks)
+    pub data_paths: Vec<PathBuf>,
 }
 
 pub fn router(
@@ -31,6 +34,7 @@ pub fn router(
     pool: Arc<Pool>,
     gc_discard_ratio: f64,
     zfs: Vec<Option<ozd_zfs::ZfsPool>>,
+    data_paths: Vec<PathBuf>,
 ) -> Router {
     Router::new()
         .route("/admin/usage", get(usage))
@@ -45,8 +49,10 @@ pub fn router(
         .route("/admin/car/import", post(car_import))
         .route("/admin/car/export", post(car_export))
         .route("/admin/capacity", get(capacity_report))
+        .route("/admin/snapshot", post(create_snapshot))
+        .route("/admin/snapshots", get(list_snapshots))
         .route("/metrics", get(metrics))
-        .with_state(AdminState { shards, pool, gc_discard_ratio, zfs })
+        .with_state(AdminState { shards, pool, gc_discard_ratio, zfs, data_paths })
 }
 
 /// POST /admin/scrub?shard=N&batch=M — один deep-scrub шаг (CRC + self-heal).
@@ -477,4 +483,145 @@ async fn run_gc(
         }
     }
     axum::Json(items)
+}
+
+/// W23: POST /admin/snapshot — мгновенный snapshot через hardlinks запечатанных
+/// сегментов. Создаёт `snapshots/<id>/shard-<i>/seg.XXXXXXXX.dat` для каждого шарда.
+/// Активный (записываемый) сегмент НЕ включён — он flush'ится перед snapshot.
+async fn create_snapshot(State(st): State<AdminState>) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let data_paths = st.data_paths.clone();
+    let pool = st.pool.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        // flush — переводит данные write-буфера в запечатанные сегменты
+        let _ = pool.flush_all();
+
+        // id: ISO timestamp + 4 hex из nanoseconds (уникальность без rand)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        let secs = now.as_secs();
+        let nanos = now.subsec_nanos();
+        let id = format!(
+            "{}-{:04x}",
+            chrono_lite(secs),
+            nanos & 0xFFFF
+        );
+
+        let mut total_segs = 0usize;
+        let mut total_bytes = 0u64;
+
+        for (i, dp) in data_paths.iter().enumerate() {
+            let snap_dir = dp.join("snapshots").join(&id);
+            std::fs::create_dir_all(&snap_dir)
+                .map_err(|e| format!("mkdir {}: {e}", snap_dir.display()))?;
+
+            // scan sealed segments: seg.XXXXXXXX.dat
+            let rd = std::fs::read_dir(dp)
+                .map_err(|e| format!("readdir shard {i}: {e}"))?;
+            for ent in rd.flatten() {
+                let name = ent.file_name();
+                let name_str = name.to_string_lossy();
+                if name_str.starts_with("seg.") && name_str.ends_with(".dat") {
+                    let src = ent.path();
+                    let dst = snap_dir.join(&*name);
+                    if std::fs::hard_link(&src, &dst).is_ok() {
+                        total_segs += 1;
+                        total_bytes += ent.metadata().map(|m| m.len()).unwrap_or(0);
+                    }
+                }
+            }
+        }
+
+        Ok::<_, String>(types::SnapshotResponse {
+            id,
+            shards: data_paths.len(),
+            segments: total_segs,
+            bytes: total_bytes,
+            path: "snapshots/<id>/ inside each data_path".into(),
+        })
+    })
+    .await;
+    match res {
+        Ok(Ok(r)) => axum::Json(r).into_response(),
+        Ok(Err(e)) => axum::Json(types::ErrorResponse::new(e)).into_response(),
+        Err(e) => axum::Json(types::ErrorResponse::new(e)).into_response(),
+    }
+}
+
+/// W23: GET /admin/snapshots — список существующих snapshot'ов.
+/// Сканирует `<data_path[0]>/snapshots/` (все шарды имеют одинаковые id).
+async fn list_snapshots(State(st): State<AdminState>) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let data_paths = st.data_paths.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        let mut items: Vec<types::SnapshotListItem> = Vec::new();
+
+        // собираем все id из snapshots/ первого шарда (они же на всех остальных)
+        let snap_root = data_paths[0].join("snapshots");
+        let rd = match std::fs::read_dir(&snap_root) {
+            Ok(r) => r,
+            Err(_) => return items, // нет snapshot'ов
+        };
+
+        for ent in rd.flatten() {
+            if !ent.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let id = ent.file_name().to_string_lossy().to_string();
+
+            // подсчитать суммарные сегменты/байты по всем шардам
+            let mut segs = 0usize;
+            let mut bytes = 0u64;
+            for dp in &data_paths {
+                let sdir = dp.join("snapshots").join(&id);
+                if let Ok(rd2) = std::fs::read_dir(&sdir) {
+                    for e2 in rd2.flatten() {
+                        let n = e2.file_name();
+                        let n = n.to_string_lossy();
+                        if n.starts_with("seg.") && n.ends_with(".dat") {
+                            segs += 1;
+                            bytes += e2.metadata().map(|m| m.len()).unwrap_or(0);
+                        }
+                    }
+                }
+            }
+
+            // created из id (формат: YYYYMMDD-HHMMSS-XXXX)
+            let created = id.clone();
+            items.push(types::SnapshotListItem { id, created, segments: segs, bytes });
+        }
+
+        items.sort_by(|a, b| a.id.cmp(&b.id));
+        items
+    })
+    .await;
+    match res {
+        Ok(items) => axum::Json(items).into_response(),
+        Err(e) => axum::Json(types::ErrorResponse::new(e)).into_response(),
+    }
+}
+
+/// Минимальный ISO-подобный форматировщик без зависимости chrono.
+fn chrono_lite(epoch_secs: u64) -> String {
+    // дни с 1970-01-01
+    let days = epoch_secs / 86400;
+    let rem = epoch_secs % 86400;
+    let h = rem / 3600;
+    let m = (rem % 3600) / 60;
+    let s = rem % 60;
+
+    // год/месяц/день по гражданскому алгоритму (Casssini/Howard Hinnant)
+    let z = days + 719468;
+    let era = z / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let mo = if mp < 10 { mp + 3 } else { mp - 9 };
+    let yr = if mo <= 2 { y + 1 } else { y };
+
+    format!("{yr:04}{mo:02}{d:02}-{h:02}{m:02}{s:02}")
 }

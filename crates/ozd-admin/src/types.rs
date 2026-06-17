@@ -152,3 +152,20 @@ pub struct BallastItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
+
+#[derive(Serialize)]
+pub struct SnapshotResponse {
+    pub id: String,
+    pub shards: usize,
+    pub segments: usize,
+    pub bytes: u64,
+    pub path: String,
+}
+
+#[derive(Serialize)]
+pub struct SnapshotListItem {
+    pub id: String,
+    pub created: String,
+    pub segments: usize,
+    pub bytes: u64,
+}
