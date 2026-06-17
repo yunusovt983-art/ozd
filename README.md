@@ -204,43 +204,42 @@ CID ──► placement(CID, topology) ──► [ShardId₁ .. ShardId_R]   (to
 
 | Крейт | Строк (.rs) | Назначение |
 |--------|------------|------------|
-| `ozd-app` | ~5 254 | Бизнес-логика (pool, cache, CAR, erasure, placement…) |
+| `ozd-app` | ~5 280 | Бизнес-логика (pool, cache, CAR, erasure, placement…) |
 | `ozd-engine` | ~2 335 | Движок сегментов + property-тесты + criterion bench |
-| `ozd-ipfs` | ~1 322 | IPFS-слой + SigV4 + async-адаптер + e2e-тест |
+| `ozd-ipfs` | ~1 456 | IPFS-слой + SigV4 + rate-limiter + async-адаптер + e2e-тест |
 | `ozd-zfs` | ~952 | Обёртка над OpenZFS CLI |
-| `ozd-daemon` | ~795 | Точка входа демона |
-| `ozd-admin` | ~634 | Админ-API (typed responses, capacity planning) |
+| `ozd-daemon` | ~856 | Точка входа демона |
+| `ozd-admin` | ~798 | Админ-API (typed responses, capacity, snapshots) |
 | `ozd-bench` | ~335 | Бенчмарки |
 | `ozd-domain` | ~331 | Доменные типы |
-| **Итого .rs** | **~11 958** | |
+| **Итого .rs** | **~12 343** | |
 
 ### Документация и проектирование (`Wiki/`)
 
 | Раздел | Строк |
 |--------|-------|
-| Архитектура, планы, ADR | ~2 857 |
-| Arch_DDD (анализ 30+ систем) | ~12 747 |
-| Feynman-карточки (96 концептов) | ~3 814 |
-| Прочее (ROADMAP, KUBO, BENCH, WEEKLY-ARCS, GRAFANA…) | ~1 132 |
+| Архитектура, планы, ADR | ~2 195 |
+| Arch_DDD (анализ 30+ систем) | ~13 112 |
+| Feynman-карточки (96+ концептов) | ~3 892 |
+| Прочее (ROADMAP, KUBO, BENCH, WEEKLY-ARCS, GRAFANA…) | ~1 351 |
 | **Итого Wiki** | **~20 550** |
 
 ### Инфраструктура (scripts + deployments)
 
 | Категория | Строк |
 |-----------|-------|
-| Docker (compose, Dockerfile×2, конфиги) | ~230 |
-| Scripts (gen_config, smoke) | ~198 |
-| systemd + example.toml | ~131 |
-| **Итого infra** | **~559** |
+| Docker (compose, Dockerfile×2, конфиги) | ~425 |
+| Scripts (gen_config, smoke, backup) | ~277 |
+| **Итого infra** | **~702** |
 
 ### Общий итог
 
 | Категория | Строк |
 |-----------|-------|
-| Rust-код | ~11 958 |
+| Rust-код | ~12 343 |
 | Документация (Wiki + README) | ~20 550 |
-| Инфраструктура (Docker, scripts, deploy) | ~559 |
-| **Всего по проекту** | **~33 067** |
+| Инфраструктура (Docker, scripts, deploy) | ~702 |
+| **Всего по проекту** | **~33 595** |
 
 ## Лицензия
 
