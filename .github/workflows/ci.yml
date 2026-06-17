@@ -12,5 +12,35 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
-      # W7.4: bench smoke (быстрый, не regression — проверяем что бинарь собирается и работает)
+      # W7.4: bench smoke
       - run: cargo run -p ozd-bench --release -- --disks=4 --objects=50 --reads=100 --seed=1
+
+  integration:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build ozd
+        run: cargo build --release -p ozd-daemon
+      - name: Start ozd
+        run: |
+          mkdir -p /tmp/ozd-ci-d{0,1,2}
+          cat > /tmp/ozd-ci.toml << 'EOF'
+          listen = "127.0.0.1:9100"
+          replicas = 2
+          write_quorum = 2
+          [[disks]]
+          data_path = "/tmp/ozd-ci-d0"
+          [[disks]]
+          data_path = "/tmp/ozd-ci-d1"
+          [[disks]]
+          data_path = "/tmp/ozd-ci-d2"
+          EOF
+          ./target/release/ozd-daemon --config /tmp/ozd-ci.toml &
+          sleep 2
+      - name: Smoke test
+        run: ./scripts/kubo_smoke.sh http://localhost:9100
+      - name: Stop ozd
+        if: always()
+        run: kill %1 2>/dev/null || true

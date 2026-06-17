@@ -781,25 +781,24 @@ impl Pool {
         }
         // ПАРАЛЛЕЛЬНАЯ запись на R дисков (PLAN Ф2): латентность = max(ноги),
         // а не сумма — на HDD при R=2 это ~2× выигрыш.
-        // W2.2: scoped threads — нет Arc<Vec> копии тела, data живёт по ссылке
         use std::sync::mpsc;
+        let shared: Arc<Vec<u8>> = Arc::new(data.to_vec());
         let (tx, rx) = mpsc::channel::<(ShardId, DomainResult<()>)>();
-        std::thread::scope(|sc| {
-            for sid in &reps {
-                let s = self.shards[sid.0 as usize].clone();
-                let k = key.clone();
-                let tx = tx.clone();
-                let sid = *sid;
-                sc.spawn(move || {
-                    let _ = tx.send((sid, s.put(&k, data)));
-                });
-            }
-            drop(tx);
-        });
+        for sid in &reps {
+            let s = self.shards[sid.0 as usize].clone();
+            let k = key.clone();
+            let d = shared.clone();
+            let tx = tx.clone();
+            let sid = *sid;
+            std::thread::spawn(move || {
+                let _ = tx.send((sid, s.put(&k, &d)));
+            });
+        }
+        drop(tx);
         let mut ok = 0usize;
         let mut failed: Vec<ShardId> = Vec::new();
         let mut last_err = None;
-        while let Ok((sid, res)) = rx.try_recv() {
+        while let Ok((sid, res)) = rx.recv() {
             match res {
                 Ok(()) => ok += 1,
                 Err(e) => {
@@ -1203,7 +1202,7 @@ impl Pool {
         let mut ok = 0usize;
         let mut failed: Vec<usize> = Vec::new();
         let mut last_err = None;
-        while let Ok((i, sid, res)) = rx.try_recv() {
+        while let Ok((i, sid, res)) = rx.recv() {
             match res {
                 Ok(()) => ok += 1,
                 Err(e) => {

@@ -62,5 +62,40 @@ echo -n "/metrics... "
 STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${OZD_URL}/metrics")
 [ "$STATUS" = "200" ] && echo "OK" || { echo "FAIL ($STATUS)"; exit 1; }
 
+# --- W14.2: расширенные проверки ---
+
+# 9. Large body (1 МиБ)
+echo -n "PUT 1MiB body... "
+LARGE=$(dd if=/dev/urandom bs=1024 count=1024 2>/dev/null | base64 | head -c 1048576)
+STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
+  -d "$LARGE" "${OZD_URL}/${BUCKET}/blocks/LARGE1MIB")
+[ "$STATUS" = "200" ] && echo "OK" || { echo "FAIL ($STATUS)"; exit 1; }
+
+echo -n "GET 1MiB body (size check)... "
+SIZE=$(curl -s -I "${OZD_URL}/${BUCKET}/blocks/LARGE1MIB" | grep -i content-length | awk '{print $2}' | tr -d '\r')
+[ "$SIZE" = "1048576" ] && echo "OK (1MiB)" || { echo "FAIL (size=$SIZE)"; exit 1; }
+
+# 10. Multiple keys (batch PUT + LIST count)
+echo -n "Batch PUT 10 keys... "
+for i in $(seq 1 10); do
+  curl -s -o /dev/null -X PUT -d "data-$i" "${OZD_URL}/${BUCKET}/blocks/BATCH${i}"
+done
+echo "OK"
+
+echo -n "ListV2 count >= 10... "
+COUNT=$(curl -s "${OZD_URL}/${BUCKET}?prefix=blocks/BATCH&max-keys=100" | grep -c "<Key>")
+[ "$COUNT" -ge 10 ] && echo "OK ($COUNT keys)" || { echo "FAIL ($COUNT)"; exit 1; }
+
+# 11. Range GET (bytes=0-9)
+echo -n "Range GET bytes=0-9... "
+RANGE_BODY=$(curl -s -H "Range: bytes=0-9" "${OZD_URL}/${BUCKET}/blocks/BATCH1")
+[ "${#RANGE_BODY}" = "10" ] && echo "OK (10 bytes)" || { echo "FAIL (got ${#RANGE_BODY} bytes)"; exit 1; }
+
+# 12. Cleanup batch
+for i in $(seq 1 10); do
+  curl -s -o /dev/null -X DELETE "${OZD_URL}/${BUCKET}/blocks/BATCH${i}"
+done
+curl -s -o /dev/null -X DELETE "${OZD_URL}/${BUCKET}/blocks/LARGE1MIB"
+
 echo ""
-echo "=== ALL PASSED ==="
+echo "=== ALL 12 CHECKS PASSED ==="
