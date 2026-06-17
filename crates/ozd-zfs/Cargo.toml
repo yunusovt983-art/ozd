@@ -8,3 +8,4 @@ license.workspace = true
 [dependencies]
 ozd-domain = { workspace = true }
 tracing = { workspace = true }
+parking_lot = { workspace = true }

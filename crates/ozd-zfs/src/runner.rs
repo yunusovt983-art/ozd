@@ -91,15 +91,15 @@ pub fn default_runner() -> Arc<dyn Runner> {
 
 /// Фейк для тестов (#146): очередь заготовленных ответов + журнал вызовов.
 pub struct FakeRunner {
-    pub responses: parking_lot_lite::Mutex<std::collections::VecDeque<CmdOutput>>,
-    pub calls: parking_lot_lite::Mutex<Vec<String>>,
+    pub responses: parking_lot::Mutex<std::collections::VecDeque<CmdOutput>>,
+    pub calls: parking_lot::Mutex<Vec<String>>,
 }
 
 impl FakeRunner {
     pub fn new(responses: Vec<CmdOutput>) -> Self {
         Self {
-            responses: parking_lot_lite::Mutex::new(responses.into()),
-            calls: parking_lot_lite::Mutex::new(Vec::new()),
+            responses: parking_lot::Mutex::new(responses.into()),
+            calls: parking_lot::Mutex::new(Vec::new()),
         }
     }
     pub fn ok(stdout: &str) -> CmdOutput {
@@ -116,18 +116,5 @@ impl Runner for FakeRunner {
         self.responses.lock().pop_front().ok_or_else(|| {
             std::io::Error::other("FakeRunner: no more queued responses")
         })
-    }
-}
-
-/// std-Mutex обёртка, чтобы не тянуть parking_lot в этот крейт.
-mod parking_lot_lite {
-    pub struct Mutex<T>(std::sync::Mutex<T>);
-    impl<T> Mutex<T> {
-        pub fn new(v: T) -> Self {
-            Self(std::sync::Mutex::new(v))
-        }
-        pub fn lock(&self) -> std::sync::MutexGuard<'_, T> {
-            self.0.lock().unwrap_or_else(|e| e.into_inner())
-        }
     }
 }

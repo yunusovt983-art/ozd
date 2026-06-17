@@ -727,7 +727,10 @@ impl ShardEngine for DiskEngine {
                     return Ok(stored);
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
-                    return Err(DomainError::IntegrityViolation(e.to_string()));
+                    // W12.3: CRC-mismatch → Corrupt (матчится без парсинга строк)
+                    return Err(DomainError::Corrupt(format!(
+                        "{}: {e}", String::from_utf8_lossy(key.as_bytes())
+                    )));
                 }
                 Err(e) => {
                     prev = Some(entry);

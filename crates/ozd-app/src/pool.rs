@@ -152,6 +152,10 @@ impl HealQueue {
             match self.dedup.get(&item.key) {
                 Some(p) if *p == item.prio => {
                     self.dedup.remove(&item.key);
+                    // W12.2: сжать heap, если фантомных записей > 2× реальных
+                    if self.heap.len() > self.dedup.len() * 2 + 64 {
+                        self.heap.shrink_to(self.dedup.len() * 2);
+                    }
                     return Some((item.key, item.prio));
                 }
                 _ => continue, // устаревшая копия после upgrade
