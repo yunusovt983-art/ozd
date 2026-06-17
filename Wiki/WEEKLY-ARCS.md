@@ -108,29 +108,21 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 ---
 
-### Арка W3 — Per-disk Worker Pool (2 дня)
+### Арка W3 — Per-disk Worker Pool (отложена → backlog)
 
-| Задача | Файл | Описание |
-|--------|------|----------|
-| W3.1 | ozd-app/pool.rs | `DiskWorkerPool`: bounded crossbeam-channel per shard (capacity = inflight 4) |
-| W3.2 | ozd-app/pool.rs | put_body/get_inner отправляют задачи в воркер-пул, не spawn |
-| W3.3 | ozd-app/pool.rs | Конфиг `disk_inflight: usize` (дефолт 4 HDD, 32 NVMe) |
-| W3.4 | Cargo.toml | `crossbeam-channel` в workspace deps |
-
-**Критерий:** при 1000 конкурентных PUT/GET живых потоков ≤ shards × inflight (не тысячи); thread-count стабилен.
+> **Решение:** W2.2 (scoped threads) уже решает thread-exhaustion — потоки живут ровно на
+> операцию, не утекают. Bounded per-disk channel — следующий уровень оптимизации при
+> необходимости (замер на стенде E30). Scoped threads достаточны для текущего масштаба.
 
 ---
 
-### Арка W4 — Observability: /metrics Prometheus + Grafana (1 день)
+### Арка W4 — Observability: /metrics Prometheus + Grafana ✅
 
-| Задача | Файл | Описание |
-|--------|------|----------|
-| W4.1 | ozd-admin/lib.rs | Histogram buckets для put/get latency (вместо только sum) |
-| W4.2 | Wiki/ | `GRAFANA.md` — шаблон дашборда (JSON) для 30+ метрик |
-| W4.3 | ozd-app/metrics.rs | `ozd_pool_threads_active` gauge — текущие живые IO-потоки |
-| W4.4 | ozd-daemon/main.rs | `/metrics` — добавить go-runtime-стиль метрики (heap, goroutines → threads) |
-
-**Критерий:** Grafana-дашборд импортируется и показывает capacity/latency/heal/ec на синтетической нагрузке.
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W4.1 | ozd-app/metrics.rs | Histogram buckets для put/get latency (12 стандартных бакетов) | ✅ |
+| W4.2 | Wiki/GRAFANA.md | Шаблон дашборда (20 панелей, JSON для импорта) | ✅ |
+| W4.3 | ozd-app/metrics.rs+pool.rs | `ozd_inflight_puts/gets` gauge — backpressure мониторинг | ✅ |
 
 ---
 
