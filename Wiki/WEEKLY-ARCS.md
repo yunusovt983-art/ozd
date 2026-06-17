@@ -80,7 +80,7 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 ---
 
-## II. Арки на неделю (17–23 июня 2026)
+## Неделя 1 (16–20 июня 2026)
 
 ### Арка W1 — Degraded Start + Timeouts ✅
 
@@ -136,7 +136,7 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 ---
 
-## Неделя 2 (24–30 июня 2026)
+## Неделя 2 (23–27 июня 2026)
 
 ### Арка W5 — Error taxonomy + Config validation ✅
 
@@ -186,7 +186,7 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 ---
 
-## Неделя 3 (1–7 июля 2026)
+## Неделя 3 (30 июня – 4 июля 2026)
 
 ### Арка W9 — Kubo-интеграция без сервера ✅
 
@@ -241,7 +241,7 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 ---
 
-## Неделя 4 (8–14 июля 2026)
+## Неделя 4 (7–11 июля 2026)
 
 ### Арка W14 — Integration test: Kubo end-to-end в CI ✅
 
@@ -309,7 +309,7 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 ---
 
-## Неделя 5 (15–21 июля 2026)
+## Неделя 5 (14–18 июля 2026)
 
 ### Арка W19 — Admin API: typed responses с derive(Serialize) ✅
 
@@ -403,7 +403,7 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 ---
 
-## Неделя 6 (18–24 июля 2026)
+## Неделя 6 (21–25 июля 2026)
 
 ### Арка W24 — HTTP 503 при graceful shutdown ✅
 
@@ -445,7 +445,7 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 ---
 
-## Неделя 7 (25–31 июля 2026)
+## Неделя 7 (28 июля – 1 августа 2026)
 
 ### Арка W27 — DomainError taxonomy: Shutdown + DiskSlow sentinels
 
