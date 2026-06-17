@@ -513,24 +513,33 @@ async fn main() -> Result<()> {
                 iv.tick().await;
                 for (i, zp) in mon_zfs.iter().enumerate() {
                     let Some(zp) = zp.clone() else { continue };
-                    let res = tokio::task::spawn_blocking(move || {
-                        let h = zp.status()?;
-                        let cap = zp.effective_capacity(); // #150: free+freeing
-                        Ok::<_, ozd_zfs::ZfsError>((h, cap))
-                    })
+                    // W1.3: таймаут 60с на spawn_blocking — зависший диск
+                    // не блокирует мониторинг остальных 59
+                    let res = tokio::time::timeout(
+                        Duration::from_secs(60),
+                        tokio::task::spawn_blocking(move || {
+                            let h = zp.status()?;
+                            let cap = zp.effective_capacity();
+                            Ok::<_, ozd_zfs::ZfsError>((h, cap))
+                        }),
+                    )
                     .await;
                     // сырое наблюдение → FSM (#142) → доменный статус
                     let obs = match &res {
-                        Ok(Ok((h, _))) => match ozd_zfs::to_shard_status(h) {
+                        Ok(Ok(Ok((h, _)))) => match ozd_zfs::to_shard_status(h) {
                             ozd_domain::ShardStatus::Online => ozd_app::Observation::Healthy,
                             ozd_domain::ShardStatus::Suspect => ozd_app::Observation::Degraded,
                             ozd_domain::ShardStatus::Faulted => ozd_app::Observation::Down,
                         },
+                        Err(_elapsed) => {
+                            tracing::warn!(shard = i, "zfs health: spawn_blocking timed out (60s)");
+                            ozd_app::Observation::Down
+                        }
                         _ => ozd_app::Observation::Down,
                     };
                     let st = fsms[i].observe(obs);
                     mon_pool.set_shard_status(i, st);
-                    if let Ok(Ok((h, cap))) = res {
+                    if let Ok(Ok(Ok((h, cap)))) = res {
                         if st != ozd_domain::ShardStatus::Online {
                             let (re, we, ce) = h.total_errors();
                             tracing::warn!(
