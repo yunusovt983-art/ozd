@@ -1,31 +1,38 @@
-# W9.2: Kubo с go-ds-s3 плагином для ozd
-# Сборка Kubo из исходников с встроенным s3ds датастором
+# W9 Phase 2: Kubo + go-ds-s3 плагин (встроенный, не .so)
+#
+# Сборка Kubo из исходников с s3ds-модулем. Go 1.22+ обязателен.
+# go-ds-s3 (Peergos fork) — datastore поверх S3 API → наш ozd.
 
-FROM golang:1.22-bullseye AS builder
-WORKDIR /build
+FROM golang:1.22-bookworm AS builder
 
-# Клонируем Kubo и go-ds-s3
-RUN git clone --depth 1 --branch v0.32.1 https://github.com/ipfs/kubo.git . && \
-    git clone --depth 1 https://github.com/ipfs-shipyard/go-ds-s3.git ./go-ds-s3-src
+# Клонируем Kubo нужной версии
+ARG KUBO_VERSION=v0.32.1
+RUN git clone --depth 1 --branch ${KUBO_VERSION} https://github.com/ipfs/kubo.git /build/kubo
 
-# Пулим зависимость go-ds-s3 в модули Kubo
-# (Способ 1: простой require + tidy; Способ 2: patch с локальной папкой)
-RUN cd /build && go mod edit -require github.com/ipfs-shipyard/go-ds-s3@v0.10.0 && \
-    go mod edit -replace github.com/ipfs-shipyard/go-ds-s3=./go-ds-s3-src && \
+WORKDIR /build/kubo
+
+# Добавляем go-ds-s3 как плагин (паттерн из Peergos/go-ds-s3 README)
+RUN echo 's3ds github.com/ipfs/go-ds-s3/plugin 0' >> plugin/loader/preload_list && \
+    go get github.com/ipfs/go-ds-s3/plugin@latest && \
     go mod tidy
 
-# Собираем Kubo с включённым go-ds-s3
-RUN make build
+# Сборка
+RUN CGO_ENABLED=0 make build
 
+# Runtime
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates jq && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl jq && \
+    rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /build/cmd/ipfs/ipfs /usr/local/bin/ipfs
-RUN chmod +x /usr/local/bin/ipfs
+COPY --from=builder /build/kubo/cmd/ipfs/ipfs /usr/local/bin/ipfs
 
-# Инициализация профиля и конфига go-ds-s3 при старте
-VOLUME ["/data/ipfs"]
 ENV IPFS_PATH=/data/ipfs
+RUN mkdir -p /data/ipfs
 
-ENTRYPOINT ["/bin/sh", "-c"]
-CMD ["ipfs daemon --enable-gc"]
+EXPOSE 4001 5001 8080
+
+COPY kubo-init.sh /usr/local/bin/kubo-init.sh
+RUN chmod +x /usr/local/bin/kubo-init.sh
+
+ENTRYPOINT ["/usr/local/bin/kubo-init.sh"]

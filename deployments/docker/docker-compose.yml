@@ -1,23 +1,23 @@
-# W9.2: Kubo + go-ds-s3 → ozd (интеграционный smoke)
-#
-# Запуск: docker compose up --build
-# Тест:   ./scripts/kubo_smoke.sh
-#         ipfs --api=/ip4/127.0.0.1/tcp/5001 add <файл>
+# W9 Phase 2: Kubo + go-ds-s3 → ozd (полная интеграция)
 #
 # Архитектура:
-#   ozd (порт 9100) ← S3 API ← Kubo go-ds-s3 плагин (блоки /blocks/)
-#   Kubo API: порт 5001 (ipfs add/cat/pin)
-#   Kubo Gateway: порт 8080 (ipfs://Qm... → HTTP)
+#   Kubo + go-ds-s3 plugin
+#     ├─ /blocks → S3 API → ozd:9100 (blockstore: R=2 mirror, 3 tmpfs)
+#     └─ /       → leveldb (metadata, pins)
 #
-# ozd работает с 3 tmpfs-дисками (данные в RAM — быстро, без персистентности).
-# Kubo собирается из исходников с встроенным go-ds-s3 модулем.
+# Запуск:
+#   docker compose up --build
+#   ipfs --api=/ip4/127.0.0.1/tcp/5001 add <file>
+#   ./scripts/kubo_smoke.sh http://localhost:9100
+#
+# Для production: заменить tmpfs на реальные ZFS-датасеты в ozd-docker.toml.
 
 services:
   ozd:
+    container_name: ozd
     build:
       context: ../..
       dockerfile: deployments/docker/Dockerfile.ozd
-    container_name: ozd
     ports:
       - "9100:9100"
     tmpfs:
@@ -27,33 +27,30 @@ services:
     environment:
       - RUST_LOG=info
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9100/healthz"]
-      interval: 5s
+      test: ["CMD", "curl", "-sf", "http://localhost:9100/healthz"]
+      interval: 3s
       timeout: 2s
-      retries: 3
+      retries: 10
 
   kubo:
-    build:
-      context: ../..
-      dockerfile: deployments/docker/Dockerfile.kubo
     container_name: kubo
+    build:
+      context: .
+      dockerfile: Dockerfile.kubo
     depends_on:
       ozd:
         condition: service_healthy
     ports:
-      - "5001:5001"  # API
-      - "4001:4001"  # Swarm
-      - "8080:8080"  # Gateway
-    volumes:
-      - ./kubo-init.sh:/entrypoint.sh:ro
-      - kubo_data:/data/ipfs
+      - "5001:5001"   # API
+      - "4001:4001"   # Swarm (libp2p)
+      - "8080:8080"   # Gateway
     environment:
-      - IPFS_PATH=/data/ipfs
-    entrypoint: ["/bin/sh"]
-    command: [
-      "-c",
-      "chmod +x /entrypoint.sh && /entrypoint.sh && exec ipfs daemon --enable-gc"
-    ]
+      - OZD_S3_ENDPOINT=http://ozd:9100
+      - OZD_S3_BUCKET=kubo
+      - OZD_S3_ACCESS_KEY=minioadmin
+      - OZD_S3_SECRET_KEY=minioadmin
+    volumes:
+      - kubo-data:/data/ipfs
 
 volumes:
-  kubo_data:
+  kubo-data:

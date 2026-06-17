@@ -1,80 +1,74 @@
 #!/bin/sh
-# W9.2: инициализация Kubo с go-ds-s3 плагином, указывающим на ozd.
-# Вызывается перед `ipfs daemon`.
+# W9 Phase 2: инициализация Kubo с go-ds-s3 → ozd.
 #
-# Требует: Dockerfile.kubo (custom build с go-ds-s3 модулем)
-#
-# Конфигурация:
-#   /blocks → go-ds-s3 → http://ozd:9100 (S3 API)
-#   /       → leveldb   → /data/ipfs/datastore (метаданные Kubo)
+# Конфиг datastore:
+#   /blocks → s3ds (ozd S3 API на порту 9100)
+#   /       → levelds (метаданные, pins, локальное состояние Kubo)
 
 set -e
 
-export IPFS_PATH=/data/ipfs
+export IPFS_PATH="${IPFS_PATH:-/data/ipfs}"
 
-# 1. Инициализация с дефолтным флатфс, если конфига нет
-if [ ! -f "$IPFS_PATH/config" ]; then
-  echo "Initializing Kubo..."
-  ipfs init --profile=server >/dev/null 2>&1 || true
+# Инициализация, если ещё нет
+if [ ! -f "${IPFS_PATH}/config" ]; then
+  ipfs init --profile=server
+  echo "Kubo initialized with server profile"
 fi
 
-# 2. Инъекция go-ds-s3 конфига для /blocks → ozd
-echo "Configuring go-ds-s3 mount for /blocks → ozd:9100..."
+# Инъекция Datastore.Spec: /blocks → s3ds (ozd), / → levelds
+# Формат: JSON-спецификация хранилищ Kubo (see docs/datastores.md)
+S3_ENDPOINT="${OZD_S3_ENDPOINT:-http://ozd:9100}"
+S3_BUCKET="${OZD_S3_BUCKET:-kubo}"
+S3_REGION="${OZD_S3_REGION:-us-east-1}"
+S3_ACCESS_KEY="${OZD_S3_ACCESS_KEY:-minioadmin}"
+S3_SECRET_KEY="${OZD_S3_SECRET_KEY:-minioadmin}"
 
-# Используем jq для обновления конфига (требует jq в образе)
-# или sed если jq недоступен — вот sed-вариант для надёжности
-CONFIG_FILE="$IPFS_PATH/config"
-
-# Backup
-cp "$CONFIG_FILE" "$CONFIG_FILE.bak"
-
-# Подменяем Datastore.Spec через jq (лучше) или через sed (fallback)
-if command -v jq >/dev/null 2>&1; then
-  # jq-путь: удаляем старый Datastore.Spec и вставляем новый с go-ds-s3
-  jq '.Datastore.Spec = {
-    "type": "mount",
-    "mounts": [
-      {
-        "mountpoint": "/blocks",
-        "prefix": "s3.datastore",
-        "type": "measure",
-        "child": {
-          "type": "s3ds",
-          "region": "us-east-1",
-          "bucket": "kubo",
-          "rootDirectory": "",
-          "regionEndpoint": "http://ozd:9100",
-          "accessKey": "minioadmin",
-          "secretKey": "minioadmin"
-        }
+SPEC=$(cat <<EOF
+{
+  "mounts": [
+    {
+      "child": {
+        "type": "s3ds",
+        "region": "${S3_REGION}",
+        "bucket": "${S3_BUCKET}",
+        "endpoint": "${S3_ENDPOINT}",
+        "rootDirectory": "",
+        "accessKey": "${S3_ACCESS_KEY}",
+        "secretKey": "${S3_SECRET_KEY}",
+        "workers": 100
       },
-      {
-        "mountpoint": "/",
-        "prefix": "leveldb.datastore",
-        "type": "measure",
-        "child": {
-          "type": "levelds",
-          "path": "datastore",
-          "compression": "none"
-        }
-      }
-    ]
-  }' "$CONFIG_FILE.bak" > "$CONFIG_FILE"
-  echo "✓ go-ds-s3 config injected (jq)"
-else
-  # Fallback: sed (если jq недоступен)
-  # Это грубо, но для smoke-теста сойдёт
-  echo "Warning: jq not found, using sed fallback (may lose config)"
-  # Просто оставляем бак и используем имеющийся конфиг
-  cp "$CONFIG_FILE.bak" "$CONFIG_FILE"
-fi
+      "mountpoint": "/blocks",
+      "prefix": "s3.datastore",
+      "type": "measure"
+    },
+    {
+      "child": {
+        "compression": "none",
+        "path": "datastore",
+        "type": "levelds"
+      },
+      "mountpoint": "/",
+      "prefix": "leveldb.datastore",
+      "type": "measure"
+    }
+  ],
+  "type": "mount"
+}
+EOF
+)
 
-# 3. Синхронизируем datastore_spec флаг
+# Применяем конфиг через jq (атомарная перезапись)
 if command -v jq >/dev/null 2>&1; then
-  jq '.Datastore.NoSync = false' "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && \
-    mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+  jq --argjson spec "$SPEC" '.Datastore.Spec = $spec' "${IPFS_PATH}/config" > "${IPFS_PATH}/config.tmp"
+  mv "${IPFS_PATH}/config.tmp" "${IPFS_PATH}/config"
+  echo "Datastore.Spec injected: /blocks → s3ds (${S3_ENDPOINT})"
+else
+  echo "WARNING: jq not found — Datastore.Spec NOT injected (install jq)"
 fi
 
-echo "Kubo ready with go-ds-s3 mount."
-echo "  /blocks → S3 (ozd:9100)"
-echo "  /       → leveldb (/data/ipfs/datastore)"
+# Разрешить API доступ извне контейнера
+ipfs config Addresses.API "/ip4/0.0.0.0/tcp/5001"
+ipfs config Addresses.Gateway "/ip4/0.0.0.0/tcp/8080"
+
+echo "Starting Kubo daemon..."
+exec ipfs daemon --migrate

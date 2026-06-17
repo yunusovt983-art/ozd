@@ -11,4 +11,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY --from=builder /src/target/release/ozd-daemon /usr/local/bin/ozd
 COPY deployments/docker/ozd-docker.toml /etc/ozd/ozd.toml
 EXPOSE 9100
+HEALTHCHECK --interval=3s --timeout=2s --retries=10 CMD curl -sf http://localhost:9100/healthz
 CMD ["ozd", "--config", "/etc/ozd/ozd.toml"]
