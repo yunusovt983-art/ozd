@@ -7,6 +7,11 @@
 
 use std::process::Command;
 use std::sync::Arc;
+use std::time::Duration;
+
+/// W1.2: таймаут на ZFS-команды — зависший zpool на умирающем диске
+/// не блокирует мониторный цикл бесконечно.
+const CMD_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone)]
 pub struct CmdOutput {
@@ -24,12 +29,46 @@ pub struct LocalRunner;
 
 impl Runner for LocalRunner {
     fn run(&self, program: &str, args: &[&str]) -> std::io::Result<CmdOutput> {
-        let out = Command::new(program).args(args).output()?;
-        Ok(CmdOutput {
-            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
-            success: out.status.success(),
-        })
+        use std::io::Read;
+        let mut child = Command::new(program)
+            .args(args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+        // Забираем stdout/stderr в потоки-читатели, чтобы не дедлочить на pipe
+        let mut stdout_handle = child.stdout.take().unwrap();
+        let mut stderr_handle = child.stderr.take().unwrap();
+        let stdout_thread = std::thread::spawn(move || {
+            let mut s = String::new();
+            let _ = stdout_handle.read_to_string(&mut s);
+            s
+        });
+        let stderr_thread = std::thread::spawn(move || {
+            let mut s = String::new();
+            let _ = stderr_handle.read_to_string(&mut s);
+            s
+        });
+        // W1.2: таймаут — зависший процесс убиваем через CMD_TIMEOUT
+        let deadline = std::time::Instant::now() + CMD_TIMEOUT;
+        let status = loop {
+            match child.try_wait()? {
+                Some(st) => break st,
+                None => {
+                    if std::time::Instant::now() >= deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            format!("{program}: timed out after {}s", CMD_TIMEOUT.as_secs()),
+                        ));
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+            }
+        };
+        let stdout = stdout_thread.join().unwrap_or_default();
+        let stderr = stderr_thread.join().unwrap_or_default();
+        Ok(CmdOutput { stdout, stderr, success: status.success() })
     }
 }
 
