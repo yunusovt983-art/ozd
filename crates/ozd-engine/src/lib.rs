@@ -155,6 +155,8 @@ pub struct DiskEngine {
     ballast_present: std::sync::atomic::AtomicBool,
     /// приблизительный счёт занятого (тел) — для usage
     used_bytes: AtomicU64,
+    /// W6.2: счётчик GC-проходов — sweep_orphans запускается раз в N
+    gc_pass_count: std::sync::atomic::AtomicU32,
 }
 
 fn io_err(e: impl std::fmt::Display) -> DomainError {
@@ -232,6 +234,7 @@ impl DiskEngine {
             failover_seg_dir,
             ballast_present: std::sync::atomic::AtomicBool::new(ballast_present),
             used_bytes: AtomicU64::new(used),
+            gc_pass_count: std::sync::atomic::AtomicU32::new(0),
         })
     }
 
@@ -335,6 +338,10 @@ impl DiskEngine {
     ///    discard-счётчик не убывает → жертва будет выбрана снова.
     pub fn gc_once(&self, discard_ratio: f64) -> DomainResult<GcReport> {
         let mut report = GcReport::default();
+        // W6.2: sweep_orphans раз в 5 GC-проходов (не каждый — экономит
+        // полный скан addr-таблицы на больших сторах)
+        let pass = self.gc_pass_count.fetch_add(1, Ordering::Relaxed);
+        let do_sweep = pass % 5 == 0;
 
         // выбор жертвы: max discard среди запечатанных
         let mut victim: Option<(u32, u64, u64)> = None; // (id, size, discard)
@@ -348,12 +355,12 @@ impl DiskEngine {
             }
         }
         let Some((vid, vsize, vdiscard)) = victim else {
-            self.sweep_orphans(&mut report)?; // E12: уборка и без жертвы
+            if do_sweep { self.sweep_orphans(&mut report)?; } // E12: уборка и без жертвы
             return Ok(report);
         };
         if vsize > 0 && (vdiscard as f64) < discard_ratio * (vsize as f64) {
             tracing::debug!(seg = vid, discard = vdiscard, size = vsize, "gc: below ratio, skip");
-            self.sweep_orphans(&mut report)?;
+            if do_sweep { self.sweep_orphans(&mut report)?; }
             return Ok(report); // rewrite не окупится (#122 discardRatio)
         }
         report.victim_seg = Some(vid);
@@ -451,7 +458,7 @@ impl DiskEngine {
         report.live_moved = moved;
         report.reclaimed_bytes = vsize;
         tracing::info!(seg = vid, moved, reclaimed = vsize, "gc: victim removed");
-        self.sweep_orphans(&mut report)?; // E12: добить полные «утечки» разом
+        if do_sweep { self.sweep_orphans(&mut report)?; } // E12: добить полные «утечки» разом
         Ok(report)
     }
 
