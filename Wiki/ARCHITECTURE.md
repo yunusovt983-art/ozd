@@ -280,30 +280,34 @@ flowchart LR
 
 #### Aggregate Root — `Pool`
 Гарантирует инварианты единого логического стора:
-- каждый `Cid` при текущей топологии разрешается в **R различных** `Shard` (replication
+- каждый `BlockKey` при текущей топологии разрешается в **R различных** `Shard` (replication
   factor R; при R=1 — одна копия). R дисков выбираются детерминированно (top-R по HRW);
-- запись идёт только на `Online`/`ReadWrite` шарды; успех при наборе **write-quorum W ≤ R**;
+- запись идёт только на `Online` шарды; успех при наборе **write-quorum W ≤ R**;
 - топология (множество шардов + веса) — единственный источник правды для placement;
-- цель самоисцеления: для каждого блока поддерживать R здоровых копий (resilver).
+- цель самоисцеления: для каждого блока поддерживать R здоровых копий (resilver);
+- при shutdown Pool отклоняет PUT (`DomainError::Shutdown`), GET продолжает (drain).
 
 > `replication_factor` (R) и `write_quorum` (W) — параметры пула в конфиге. По умолчанию
-> R=2, W:2 (как mirror). Реплики обязаны лежать на разных физических дисках (а в идеале —
-> в разных failure domains; в Части 1 достаточно «разные диски»).
+> R=2, W=2 (как mirror). Опционально: erasure 4+2 (Reed-Solomon) для тел > `ec_min_size`.
+> Реплики обязаны лежать на разных физических дисках.
+
+> **Erasure coding (реализовано):** тела >= `ec_min_size` (64KB) кодируются K+M кусками
+> Reed-Solomon, размещаются на K+M различных шардах. Мелочь остаётся зеркалом. Миграция
+> mirror→erasure — фоновый процесс с персистентным курсором и canary-проверкой.
 
 #### Entity — `Shard` (= один диск, vdev)
-`{ id, mount_path, capacity, used, status, engine }`.
-Статусы (ZFS-подобно): `Online · Degraded · Faulted · ReadOnly · Removed`.
+В коде: `Arc<dyn ShardEngine>` + индекс в `Vec`. Обёрнут в `MeteredShard` (EWMA-латентность).
+Статусы (FSM #142 с гистерезисом): `Online · Suspect · Faulted`.
 
-#### Value Objects
-- `Cid` — обёртка над `cid::Cid` (multihash + codec), иммутабельна.
-- `BlockData` — байты блока (`Bytes`), иммутабельны.
-- `Block = { cid, data }` — целостность: `data` хэшируется в `cid`.
-- `ShardId` — стабильный идентификатор диска (UUID в метке диска, **не** индекс!).
-- `Capacity { total, free }`, `ShardStatus`.
+#### Value Objects (реализовано)
+- `BlockKey(Vec<u8>)` — datastore-ключ Kubo (напр. `/blocks/CIQ...`), иммутабельна.
+- `ShardId(u16)` — индекс шарда в конфиге (0..N-1).
+- `Capacity { total_bytes, free_bytes }` — вес для HRW placement.
+- `ShardStatus { Online, Suspect, Faulted }` — FSM с гистерезисом (suspect_after/recover_after).
 
-> **Почему `ShardId` — UUID, а не индекс 0..N:** индекс ломается при добавлении/удалении
-> диска и при разном порядке монтирования. Стабильный ID диска делает placement
-> воспроизводимым между перезапусками.
+> **Отличие от первоначального дизайна:** `ShardId` — u16 индекс, не UUID. Идентичность
+> диска проверяется через ZFS user-properties `ozd:shard_id` при старте (W5: перепутанные
+> диски ловятся до приёма трафика).
 
 ### 2.2 Ключевое решение: функция placement
 
@@ -397,30 +401,78 @@ impl PlacementPolicy for RendezvousHrw {
 - `GarbageCollector` — mark-and-sweep по множеству `Pin`; по-шардовая зачистка.
 - `CapacityBalancer` — пересчёт весов шардов по свободному месту (вход для placement).
 
-### 2.5 Порты домена (traits)
+### 2.5 Порты домена (traits) — реализовано
 
 ```rust
-// Главный порт, который потребляет IPFS Node CTX:
+// crates/ozd-domain/src/lib.rs — СИНХРОННЫЕ traits (async через spawn_blocking)
+
+/// Ключ — произвольный datastore-ключ Kubo (не только CID).
+pub struct BlockKey(pub Vec<u8>);
+
+/// Идентификатор шарда = индекс в конфиге (0..N).
+pub struct ShardId(pub u16);
+
+/// Высокоуровневый blockstore (S3-шлюз и CacheTier работают через него):
 pub trait BlockStore: Send + Sync {
-    async fn put(&self, block: Block) -> Result<Cid>;
-    async fn get(&self, cid: &Cid) -> Result<Option<Block>>;
-    async fn has(&self, cid: &Cid) -> Result<bool>;
-    async fn delete(&self, cid: &Cid) -> Result<()>;
-    async fn list(&self) -> BlockStream;          // обход всех шардов
+    fn put(&self, key: &BlockKey, data: &[u8]) -> DomainResult<()>;
+    fn get(&self, key: &BlockKey) -> DomainResult<Vec<u8>>;
+    fn stat(&self, key: &BlockKey) -> DomainResult<u64>;  // HEAD без чтения тела
+    fn has(&self, key: &BlockKey) -> DomainResult<bool>;
+    fn delete(&self, key: &BlockKey) -> DomainResult<()>;
+    fn list(&self, prefix: &[u8], after: Option<&BlockKey>, limit: usize)
+        -> DomainResult<Vec<(BlockKey, u64)>>;
 }
 
-// Порт per-disk движка (один диск). Содержит ЛОКАЛЬНЫЙ индекс CID этого диска —
-// отдельного центрального каталога нет (см. §2.3):
-pub trait ShardEngine: Send + Sync {
-    async fn put(&self, cid: &Cid, data: &BlockData) -> Result<()>;
-    async fn get(&self, cid: &Cid) -> Result<Option<BlockData>>;
-    async fn has(&self, cid: &Cid) -> Result<bool>;   // локальный индекс диска
-    async fn delete(&self, cid: &Cid) -> Result<()>;
-    async fn iter(&self) -> CidStream;                 // вход для walk-based resilver
-    async fn usage(&self) -> Result<Capacity>;         // для весов placement
+/// Async-версия (W8, подготовка к multi-node Ч3):
+pub trait AsyncBlockStore: Send + Sync {
+    fn put(&self, key: &BlockKey, data: Vec<u8>) -> impl Future<Output = DomainResult<()>> + Send;
+    fn get(&self, key: &BlockKey) -> impl Future<Output = DomainResult<Vec<u8>>> + Send;
+    // ...
 }
-// Caталога как порта НЕТ: «где блок» = placement(cid, R) → опрос локальных индексов R дисков.
+
+/// Per-disk движок (один шард = один DiskEngine):
+pub trait ShardEngine: Send + Sync {
+    fn put(&self, key: &BlockKey, data: &[u8]) -> DomainResult<()>;
+    fn get(&self, key: &BlockKey) -> DomainResult<Vec<u8>>;
+    fn has(&self, key: &BlockKey) -> DomainResult<bool>;
+    fn delete(&self, key: &BlockKey) -> DomainResult<()>;
+    fn list(&self, prefix: &[u8], after: Option<&BlockKey>, limit: usize)
+        -> DomainResult<Vec<(BlockKey, u64)>>;
+    fn usage(&self) -> DomainResult<Capacity>;
+    fn flush(&self) -> DomainResult<()>;
+    fn gc(&self, discard_ratio: f64) -> DomainResult<GcReport>;
+    fn scrub_step(&self, after: Option<&BlockKey>, limit: usize) -> DomainResult<ScrubStep>;
+    fn save_cursor(&self, name: &str, pos: Option<&BlockKey>) -> DomainResult<()>;
+    fn load_cursor(&self, name: &str) -> DomainResult<Option<BlockKey>>;
+    // + stat, verify_structure, ballast, evict_oldest_segment, put_meta/stat_obj...
+}
+
+/// Политика размещения (порт, реализация — RendezvousHrw):
+pub trait PlacementPolicy: Send + Sync {
+    fn select(&self, key: &BlockKey, topology: &[(ShardId, Capacity, ShardStatus)], rf: usize)
+        -> Vec<ShardId>;
+}
+
+/// Доменные ошибки (sentinel-типы, W5/W27):
+pub enum DomainError {
+    NotFound,
+    ShardUnavailable(ShardId),
+    IntegrityViolation(String),
+    QuorumNotReached { ok: usize, want: usize },
+    Timeout(String),
+    DiskFull(String),
+    Corrupt(String),
+    Config(String),
+    Shutdown,               // W27: graceful shutdown
+    Io(String),
+}
 ```
+
+> **Отличия от первоначального дизайна:**
+> - Traits **синхронные** — async обеспечивается `tokio::task::spawn_blocking` в адаптерах
+> - Ключ — `BlockKey` (байтовая строка), не `Cid` — Kubo шлёт datastore-ключи вида `/blocks/CIQ...`
+> - `ShardId(u16)` — индекс в конфиге (не UUID); идентичность проверяется через ZFS user-props
+> - Domain events не реализованы — наблюдаемость через `tracing` + `OpsMetrics` (30+ атомиков)
 
 ---
 
@@ -959,17 +1011,27 @@ flowchart TB
 
 ```
 openzfs-daemon/
-├── Cargo.toml                  # [workspace]
+├── Cargo.toml                  # [workspace] 8 крейтов
 ├── crates/
-│   ├── ozd-domain/             # ПУРЕ-домен: Cid, Block, Pool, Shard, PlacementPolicy,
-│   │                           #   ShardEngine/BlockStore traits, события. Без IO.
-│   ├── ozd-app/                # use cases: StoreBlock, FetchBlock, AddShard, Resilver...
-│   ├── ozd-engine/             # adapter: ShardEngine = data-tier (XFS-HDD, pack-сегменты)
-│   │                           #   + index-tier (redb на NVMe). См. ADR 0001 + SYNTHESIS.
-│   ├── ozd-ipfs/               # inbound adapter: impl rust-ipfs BlockStore + ACL
-│   ├── ozd-admin/              # inbound adapter: RPC/HTTP + CLI пула
-│   └── ozd-daemon/             # bin: config, wiring (composition root), supervision
-└── docs/
+│   ├── ozd-domain/             # Домен: BlockKey, ShardId, BlockStore/ShardEngine traits,
+│   │                           #   PlacementPolicy, DomainError (sentinel-типы), piece. Без IO.
+│   ├── ozd-app/                # Бизнес-логика: Pool (AR), CacheTier, erasure 4+2,
+│   │                           #   HealQueue/MRF, BgThrottle (AIMD), scrub, resilver,
+│   │                           #   migration mirror→EC, verified (BLAKE3 outboard),
+│   │                           #   OpsMetrics (30+ Prometheus), RollingP99, DiskSlowMonitor.
+│   ├── ozd-engine/             # Adapter: DiskEngine = data-tier (XFS-HDD, pack-сегменты ≤2GB)
+│   │                           #   + index-tier (redb). CRC32/zstd, inline, ballast, fadvise.
+│   ├── ozd-ipfs/               # Inbound: S3-совместимый шлюз (axum), SigV4 auth,
+│   │                           #   per-IP rate-limiter, Range GET + BAO verified slices.
+│   ├── ozd-admin/              # Inbound: Admin REST API (14 endpoints), Prometheus /metrics,
+│   │                           #   snapshots, capacity planning, /admin/config.
+│   ├── ozd-zfs/                # ZFS CLI wrapper: health FSM, drift-audit, user-props identity.
+│   ├── ozd-bench/              # Benchmark: multi-disk throughput, latency histograms.
+│   └── ozd-daemon/             # Binary: config parsing, wiring, SIGHUP reload,
+│                               #   graceful shutdown (drain), background tasks orchestration.
+├── scripts/                    # gen_config.sh, kubo_smoke.sh, backup.sh
+├── deployments/                # Docker (compose, Dockerfile), systemd, ozd.example.toml
+└── Wiki/                       # Архитектура, планы, ADR, Feynman-карточки, WEEKLY-ARCS.
 ```
 
 Правило зависимостей (гексагон): **`ozd-domain` ни от кого не зависит**; адаптеры зависят от
@@ -997,6 +1059,69 @@ openzfs-daemon/
   (контроллер/хост); по умолчанию «диск = домен». Уточнить через `lsblk`/`lsscsi`, затем включить
   domain-aware размещение реплик/частей по разным realm/domain.
 - При R=2 критично окно rebuild → мониторинг + быстрый параллельный resilver (§8.3).
+
+---
+
+## 7-bis. Операционные возможности (реализовано)
+
+Компоненты, не описанные в первоначальном дизайне, добавленные по итогам разработки:
+
+### S3-шлюз (ozd-ipfs)
+- **Протокол:** S3 API (PutObject, GetObject, HeadObject, DeleteObject, ListObjectsV2)
+- **Аутентификация:** SigV4 (опционально; dev-режим без подписи на loopback)
+- **Rate-limiter:** per-IP token-bucket (`rate_limit_rps` в конфиге; 0=выкл; 429 Too Many Requests)
+- **Range GET:** `bytes=a-b`, suffix `bytes=-n`; verified через BLAKE3 outboard (BAO)
+- **Healthz v2:** `GET /healthz` → JSON `{status, shards, faulted, shutting_down}`; 503 при shutdown
+
+### Graceful shutdown (ozd-daemon + ozd-app)
+- SIGTERM/Ctrl-C → `Pool::shutdown()` (AtomicBool) → PUT возвращает `DomainError::Shutdown` (503)
+- GET продолжает работать (drain: клиенты могут дочитать)
+- Ожидание: poll `inflight_count()` каждые 50мс, дедлайн 30с
+- По истечении: `flush_all()` → exit
+
+### SIGHUP hot-reload (ozd-daemon)
+- `kill -HUP` → перечитать toml, обновить `BgThrottle` (max/min/busy) без рестарта
+- Расширяемо для других runtime-параметров
+
+### Backup / Snapshots (ozd-admin)
+- `POST /admin/snapshot` — flush + hardlink sealed сегментов в `snapshots/<id>/` (мгновенный)
+- `GET /admin/snapshots` — список снимков с id/segments/bytes
+- `DELETE /admin/snapshot?id=X` — удалить snapshot со всех шардов
+- `DELETE /admin/snapshot/old?keep=N` — retention: оставить N последних
+- `snapshot_dir` config — опциональный единый каталог вместо per-shard
+
+### Admin API (ozd-admin, 15 endpoints)
+| Endpoint | Метод | Назначение |
+|----------|-------|------------|
+| /admin/usage | GET | per-shard total/free |
+| /admin/capacity | GET | fill%, bytes_written, ETA |
+| /admin/config | GET | runtime-конфигурация (без секретов) |
+| /admin/gc | POST | ручной GC-проход |
+| /admin/scrub | POST | deep-scrub шаг (CRC + heal) |
+| /admin/resilver | POST | полный walk-resilver |
+| /admin/migrate | POST | шаг миграции mirror→EC |
+| /admin/structure | GET | индекс↔сегменты health-check |
+| /admin/zfs | GET | ZFS-пулы здоровье + drift-audit |
+| /admin/zfs/scrub | POST | запустить zpool scrub |
+| /admin/ballast/release | POST | сбросить балласт |
+| /admin/car/import | POST | bulk CARv1 импорт |
+| /admin/car/export | POST | CARv1 экспорт |
+| /admin/snapshot | POST/DELETE | создать/удалить snapshot |
+| /admin/snapshot/old | DELETE | retention cleanup |
+| /metrics | GET | Prometheus text exposition |
+
+### Observability
+- **Structured logging:** `OZD_LOG_FORMAT=json` → tracing-subscriber JSON с target/thread_ids
+- **`#[instrument]`** на горячих путях: put_body, get_inner, resilver_step
+- **Prometheus /metrics:** 30+ метрик (put/get latency histograms, inflight gauges, gc/scrub/heal counters, per-shard EWMA, bg_rate)
+- **Grafana dashboard:** 20 панелей (Wiki/GRAFANA.md)
+
+### CacheTier — NVMe read-leg (Discord SuperDisk)
+- Write-through: PUT → pool (HDD) + cache (NVMe) одновременно
+- GET: cache-hit → NVMe (0.08мс p50); miss → HDD → populate cache
+- FIFO-эвикция: старейший sealed-сегмент целиком (без LRU-учёта)
+- Single-flight coalescing: дубли GET на промахе делят один I/O
+- Self-heal: CRC-mismatch в кэше → читаем из pool, перезаписываем
 
 ---
 
