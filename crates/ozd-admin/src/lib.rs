@@ -339,8 +339,8 @@ async fn structure(State(st): State<AdminState>) -> serde_json_like::Value {
 }
 
 /// GET /admin/zfs — здоровье ZFS-пулов + метрики (#150) + дрифт-аудит (#148).
-async fn zfs_health(State(st): State<AdminState>) -> serde_json_like::Value {
-    let mut out = Vec::new();
+async fn zfs_health(State(st): State<AdminState>) -> axum::Json<Vec<types::ZfsHealthItem>> {
+    let mut items = Vec::new();
     for (i, zp) in st.zfs.iter().enumerate() {
         let Some(zp) = zp.clone() else {
             continue;
@@ -359,36 +359,43 @@ async fn zfs_health(State(st): State<AdminState>) -> serde_json_like::Value {
             Ok(Ok((h, m, drift))) => {
                 let (re, we, ce) = h.total_errors();
                 let status = ozd_zfs::to_shard_status(&h);
-                let drift_json: Vec<String> = drift
-                    .iter()
-                    .map(|d| {
-                        format!(
-                            "\"{}: expected {}, got {} (source={:?})\"",
-                            d.property, d.expected, d.actual, d.source
-                        )
-                    })
-                    .collect();
-                out.push(format!(
-                    "{{\"shard\":{i},\"pool\":\"{}\",\"state\":\"{}\",\"shard_status\":\"{:?}\",\
-                     \"read_errors\":{re},\"write_errors\":{we},\"cksum_errors\":{ce},\
-                     \"scrub_in_progress\":{},\"free\":{},\"freeing\":{},\
-                     \"effective_free\":{},\"fragmentation_pct\":{},\"drift\":[{}]}}",
-                    h.pool,
-                    h.state.as_str(),
-                    status,
-                    h.scrub.in_progress,
-                    m.free,
-                    m.freeing,
-                    m.effective_free(),
-                    m.fragmentation_pct,
-                    drift_json.join(",")
-                ));
+                items.push(types::ZfsHealthItem {
+                    shard: i,
+                    pool: h.pool,
+                    state: h.state.as_str().to_string(),
+                    shard_status: format!("{status:?}"),
+                    read_errors: re,
+                    write_errors: we,
+                    cksum_errors: ce,
+                    scrub_in_progress: h.scrub.in_progress,
+                    free: m.free,
+                    freeing: m.freeing,
+                    effective_free: m.effective_free(),
+                    fragmentation_pct: m.fragmentation_pct,
+                    drift: drift.iter().map(|d| {
+                        format!("{}: expected {}, got {} (source={:?})",
+                            d.property, d.expected, d.actual, d.source)
+                    }).collect(),
+                    error: None,
+                });
             }
-            Ok(Err(e)) => out.push(json_shard_err(i, &e)),
-            Err(e) => out.push(json_shard_err(i, &e)),
+            Ok(Err(e)) => items.push(types::ZfsHealthItem {
+                shard: i, pool: String::new(), state: String::new(),
+                shard_status: String::new(), read_errors: 0, write_errors: 0,
+                cksum_errors: 0, scrub_in_progress: false, free: 0, freeing: 0,
+                effective_free: 0, fragmentation_pct: 0, drift: vec![],
+                error: Some(e.to_string()),
+            }),
+            Err(e) => items.push(types::ZfsHealthItem {
+                shard: i, pool: String::new(), state: String::new(),
+                shard_status: String::new(), read_errors: 0, write_errors: 0,
+                cksum_errors: 0, scrub_in_progress: false, free: 0, freeing: 0,
+                effective_free: 0, fragmentation_pct: 0, drift: vec![],
+                error: Some(e.to_string()),
+            }),
         }
     }
-    serde_json_like::Value(format!("[{}]", out.join(",")))
+    axum::Json(items)
 }
 
 /// POST /admin/resilver[?batch=1000] — полный walk-resilver (Фаза 3):

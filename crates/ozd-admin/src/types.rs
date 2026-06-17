@@ -103,3 +103,22 @@ impl ErrorResponse {
         Self { error: e.to_string() }
     }
 }
+
+#[derive(Serialize)]
+pub struct ZfsHealthItem {
+    pub shard: usize,
+    pub pool: String,
+    pub state: String,
+    pub shard_status: String,
+    pub read_errors: u64,
+    pub write_errors: u64,
+    pub cksum_errors: u64,
+    pub scrub_in_progress: bool,
+    pub free: u64,
+    pub freeing: u64,
+    pub effective_free: u64,
+    pub fragmentation_pct: u64,
+    pub drift: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
