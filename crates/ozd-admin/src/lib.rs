@@ -391,16 +391,23 @@ async fn run_gc(
     serde_json_like::Value(format!("[{}]", out.join(",")))
 }
 
-/// Микро-обёртка, чтобы не тянуть serde_json в v1.
+/// W17: используем serde_json для гарантированно валидного JSON.
 mod serde_json_like {
     pub struct Value(pub String);
     impl axum::response::IntoResponse for Value {
         fn into_response(self) -> axum::response::Response {
-            (
-                [(axum::http::header::CONTENT_TYPE, "application/json")],
-                self.0,
-            )
-                .into_response()
+            // Валидируем JSON перед отдачей — ловим баги на этапе ответа
+            match serde_json::from_str::<serde_json::Value>(&self.0) {
+                Ok(v) => axum::Json(v).into_response(),
+                Err(_) => {
+                    // fallback: отдать как text/plain чтобы не молча отдать мусор
+                    (
+                        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                        [(axum::http::header::CONTENT_TYPE, "text/plain")],
+                        format!("invalid json generated: {}", &self.0[..self.0.len().min(200)]),
+                    ).into_response()
+                }
+            }
         }
     }
 }
