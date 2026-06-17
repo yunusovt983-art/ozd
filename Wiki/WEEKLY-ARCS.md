@@ -136,7 +136,63 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 ---
 
-## IV. Технический долг (backlog, не на эту неделю)
+## Неделя 2 (24–30 июня 2026)
+
+### Арка W5 — Error taxonomy + Config validation (1 день)
+
+| Задача | Файл | Описание |
+|--------|------|----------|
+| W5.1 | ozd-domain/lib.rs | Sentinel-варианты: `DomainError::Timeout`, `DomainError::DiskFull`, `DomainError::Corrupt(key)` вместо `Io(String)` для частых случаев |
+| W5.2 | ozd-daemon/main.rs | Graceful config validation: все ошибки конфига с человеческими сообщениями (ec_write_quorum > total, replicas > alive и т.д.) — без panic/assert |
+| W5.3 | ozd-app/pool.rs | Заменить `assert!` в `Pool::new` на `Result` — невалидный конфиг не паникует демон |
+
+**Критерий:** невалидный конфиг → понятное сообщение при старте (не panic); sentinel-ошибки матчатся без парсинга строк.
+
+---
+
+### Арка W6 — GC sweep_orphans кэширование (1 день)
+
+| Задача | Файл | Описание |
+|--------|------|----------|
+| W6.1 | ozd-engine/lib.rs | `referenced_segments()` кэшировать в `RwLock<BTreeMap>` с инвалидацией при put/delete (инкрементальный учёт) |
+| W6.2 | ozd-engine/lib.rs | `sweep_orphans` вызывать раз в N GC-проходов (не каждый) — конфиг `orphan_sweep_every: usize` |
+
+**Критерий:** на 10K ключей GC-проход не сканирует всю addr-таблицу; sweep_orphans отрабатывает периодически.
+
+---
+
+### Арка W7 — Property-тесты + CI bench (2 дня)
+
+| Задача | Файл | Описание |
+|--------|------|----------|
+| W7.1 | Cargo.toml | Добавить `proptest` в dev-deps ozd-engine |
+| W7.2 | crates/ozd-engine/tests/proptest_segment.rs | Property-тест: произвольные put → get == put; crash-recovery корректен |
+| W7.3 | .github/workflows/ci.yml | Добавить `cargo test` + `cargo clippy -- -D warnings` в CI |
+| W7.4 | .github/workflows/ci.yml | Bench step: `cargo run -p ozd-bench --release -- --disks=4 --objects=100 --reads=200` (smoke, не regression) |
+
+**Критерий:** CI зелёный с proptest + clippy + bench-smoke; property-тесты ловят edge-cases (пустые ключи, huge тела, concurrent put/get).
+
+---
+
+### Арка W8 — Async-ready Port (подготовка к multi-node) (2 дня)
+
+| Задача | Файл | Описание |
+|--------|------|----------|
+| W8.1 | ozd-domain/lib.rs | `AsyncBlockStore` trait с `async fn` (RPITIT, Rust 1.75+) — параллельно с sync `BlockStore` |
+| W8.2 | ozd-ipfs/src/lib.rs | Адаптер: `AsyncBlockStore` → `spawn_blocking` поверх sync Pool (без переписывания Pool) |
+| W8.3 | ozd-daemon/main.rs | Использовать `AsyncBlockStore`-адаптер вместо прямого `spawn_blocking` в хэндлерах |
+
+**Критерий:** S3-шлюз работает через async-адаптер; sync Pool не тронут; подготовка к Ч3 (gateway'и).
+
+---
+
+## Приоритизация (MoSCoW) — Неделя 2
+
+| Must | Should | Could | Won't (эта неделя) |
+|------|--------|-------|---------------------|
+| W5 error taxonomy | W7 proptest+CI | W8 async port | Per-disk worker pool (W3) |
+| W5 config validation | W7 bench smoke | | Multi-node (Ч3) |
+| W6 GC sweep кэш | | | Kubo-стенд (E30, нужен сервер) |
 
 1. **async/await переход Pool** — сейчас sync + thread::spawn. Для multi-node (Ч3) нужен настоящий async.
 2. **Property-тесты** — proptest для segment format (PLAN Ф1). Нет ни одного.
