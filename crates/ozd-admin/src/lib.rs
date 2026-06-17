@@ -27,6 +27,8 @@ pub struct AdminState {
     pub zfs: Vec<Option<ozd_zfs::ZfsPool>>,
     /// W23: data_path каждого шарда (для snapshot-hardlinks)
     pub data_paths: Vec<PathBuf>,
+    /// W26: общий каталог снимков (None = per-shard <data_path>/snapshots)
+    pub snapshot_dir: Option<PathBuf>,
 }
 
 pub fn router(
@@ -35,6 +37,7 @@ pub fn router(
     gc_discard_ratio: f64,
     zfs: Vec<Option<ozd_zfs::ZfsPool>>,
     data_paths: Vec<PathBuf>,
+    snapshot_dir: Option<PathBuf>,
 ) -> Router {
     Router::new()
         .route("/admin/usage", get(usage))
@@ -52,7 +55,7 @@ pub fn router(
         .route("/admin/snapshot", post(create_snapshot).delete(delete_snapshot))
         .route("/admin/snapshots", get(list_snapshots))
         .route("/metrics", get(metrics))
-        .with_state(AdminState { shards, pool, gc_discard_ratio, zfs, data_paths })
+        .with_state(AdminState { shards, pool, gc_discard_ratio, zfs, data_paths, snapshot_dir })
 }
 
 /// POST /admin/scrub?shard=N&batch=M — один deep-scrub шаг (CRC + self-heal).
@@ -491,6 +494,7 @@ async fn run_gc(
 async fn create_snapshot(State(st): State<AdminState>) -> axum::response::Response {
     use axum::response::IntoResponse;
     let data_paths = st.data_paths.clone();
+    let snapshot_dir = st.snapshot_dir.clone();
     let pool = st.pool.clone();
     let res = tokio::task::spawn_blocking(move || {
         // flush — переводит данные write-буфера в запечатанные сегменты
@@ -512,7 +516,7 @@ async fn create_snapshot(State(st): State<AdminState>) -> axum::response::Respon
         let mut total_bytes = 0u64;
 
         for (i, dp) in data_paths.iter().enumerate() {
-            let snap_dir = dp.join("snapshots").join(&id);
+            let snap_dir = snap_path_for(&snapshot_dir, dp, &id, i);
             std::fs::create_dir_all(&snap_dir)
                 .map_err(|e| format!("mkdir {}: {e}", snap_dir.display()))?;
 
@@ -550,15 +554,15 @@ async fn create_snapshot(State(st): State<AdminState>) -> axum::response::Respon
 }
 
 /// W23: GET /admin/snapshots — список существующих snapshot'ов.
-/// Сканирует `<data_path[0]>/snapshots/` (все шарды имеют одинаковые id).
 async fn list_snapshots(State(st): State<AdminState>) -> axum::response::Response {
     use axum::response::IntoResponse;
     let data_paths = st.data_paths.clone();
+    let snapshot_dir = st.snapshot_dir.clone();
     let res = tokio::task::spawn_blocking(move || {
         let mut items: Vec<types::SnapshotListItem> = Vec::new();
 
-        // собираем все id из snapshots/ первого шарда (они же на всех остальных)
-        let snap_root = data_paths[0].join("snapshots");
+        // W26: корневая директория для поиска snapshot-id
+        let snap_root = snap_root_for(&snapshot_dir, &data_paths[0]);
         let rd = match std::fs::read_dir(&snap_root) {
             Ok(r) => r,
             Err(_) => return items, // нет snapshot'ов
@@ -573,8 +577,8 @@ async fn list_snapshots(State(st): State<AdminState>) -> axum::response::Respons
             // подсчитать суммарные сегменты/байты по всем шардам
             let mut segs = 0usize;
             let mut bytes = 0u64;
-            for dp in &data_paths {
-                let sdir = dp.join("snapshots").join(&id);
+            for (i, dp) in data_paths.iter().enumerate() {
+                let sdir = snap_path_for(&snapshot_dir, dp, &id, i);
                 if let Ok(rd2) = std::fs::read_dir(&sdir) {
                     for e2 in rd2.flatten() {
                         let n = e2.file_name();
@@ -587,7 +591,6 @@ async fn list_snapshots(State(st): State<AdminState>) -> axum::response::Respons
                 }
             }
 
-            // created из id (формат: YYYYMMDD-HHMMSS-XXXX)
             let created = id.clone();
             items.push(types::SnapshotListItem { id, created, segments: segs, bytes });
         }
@@ -612,23 +615,22 @@ async fn delete_snapshot(
         return (axum::http::StatusCode::BAD_REQUEST,
             axum::Json(types::ErrorResponse::new("id parameter required"))).into_response();
     };
-    // basic validation: id должен быть непустым и без path-traversal
     if id.is_empty() || id.contains('/') || id.contains("..") {
         return (axum::http::StatusCode::BAD_REQUEST,
             axum::Json(types::ErrorResponse::new("invalid snapshot id"))).into_response();
     }
     let data_paths = st.data_paths.clone();
+    let snapshot_dir = st.snapshot_dir.clone();
     let res = tokio::task::spawn_blocking(move || {
         let mut deleted_files = 0usize;
         let mut deleted_dirs = 0usize;
         let mut found = false;
-        for dp in &data_paths {
-            let snap_dir = dp.join("snapshots").join(&id);
+        for (i, dp) in data_paths.iter().enumerate() {
+            let snap_dir = snap_path_for(&snapshot_dir, dp, &id, i);
             if !snap_dir.is_dir() {
                 continue;
             }
             found = true;
-            // удалить все файлы в snapshot-директории
             if let Ok(rd) = std::fs::read_dir(&snap_dir) {
                 for ent in rd.flatten() {
                     if std::fs::remove_file(ent.path()).is_ok() {
@@ -636,7 +638,6 @@ async fn delete_snapshot(
                     }
                 }
             }
-            // удалить саму директорию
             if std::fs::remove_dir(&snap_dir).is_ok() {
                 deleted_dirs += 1;
             }
@@ -652,6 +653,24 @@ async fn delete_snapshot(
         Ok(Err(msg)) => (axum::http::StatusCode::NOT_FOUND,
             axum::Json(types::ErrorResponse::new(msg))).into_response(),
         Err(e) => axum::Json(types::ErrorResponse::new(e)).into_response(),
+    }
+}
+
+/// W26: вычислить путь snapshot-директории для шарда.
+/// Если snapshot_dir задан — `<snapshot_dir>/<id>/shard-<i>/`
+/// Иначе (дефолт) — `<data_path>/snapshots/<id>/`
+fn snap_path_for(snapshot_dir: &Option<PathBuf>, data_path: &PathBuf, id: &str, shard_idx: usize) -> PathBuf {
+    match snapshot_dir {
+        Some(dir) => dir.join(id).join(format!("shard-{shard_idx}")),
+        None => data_path.join("snapshots").join(id),
+    }
+}
+
+/// W26: корневая директория для перечисления snapshot-id.
+fn snap_root_for(snapshot_dir: &Option<PathBuf>, data_path_0: &PathBuf) -> PathBuf {
+    match snapshot_dir {
+        Some(dir) => dir.clone(),
+        None => data_path_0.join("snapshots"),
     }
 }
 

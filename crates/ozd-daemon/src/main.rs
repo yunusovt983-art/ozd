@@ -107,6 +107,9 @@ struct Config {
     /// W22: per-IP rate-limit на S3 API, запросов/с; 0 = выключен
     #[serde(default)]
     rate_limit_rps: u32,
+    /// W26: общий каталог снимков; None = per-shard <data_path>/snapshots
+    #[serde(default)]
+    snapshot_dir: Option<PathBuf>,
     /// до 60 дисков; каждый — точка монтирования ZFS-датасета
     disks: Vec<DiskCfg>,
     #[serde(default)]
@@ -547,6 +550,7 @@ async fn main() -> Result<()> {
             cfg.gc_discard_ratio,
             zfs_pools.clone(),
             cfg.disks.iter().map(|d| d.data_path.clone()).collect(),
+            cfg.snapshot_dir.clone(),
         ));
 
     // фоновый ZFS-health-монитор (GO-MIGRATION P1): zpool status → ShardStatus
