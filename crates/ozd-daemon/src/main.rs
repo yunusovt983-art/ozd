@@ -303,6 +303,19 @@ async fn main() -> Result<()> {
         cfg.replicas,
         cfg.disks.len()
     );
+    // W5.2: graceful validation — все ошибки конфига с понятными сообщениями
+    anyhow::ensure!(
+        cfg.write_quorum <= cfg.replicas,
+        "config: write_quorum W={} > replicas R={} (кворум не может быть больше R)",
+        cfg.write_quorum,
+        cfg.replicas
+    );
+    anyhow::ensure!(
+        cfg.replicas >= 1 && cfg.write_quorum >= 1,
+        "config: replicas={} и write_quorum={} должны быть ≥ 1",
+        cfg.replicas,
+        cfg.write_quorum
+    );
 
     tracing::info!(
         disks = cfg.disks.len(),
