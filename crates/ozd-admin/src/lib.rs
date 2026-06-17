@@ -53,25 +53,35 @@ pub fn router(
 async fn run_scrub(
     State(st): State<AdminState>,
     Query(q): Query<HashMap<String, String>>,
-) -> serde_json_like::Value {
+) -> axum::Json<Vec<types::ScrubItem>> {
     let batch = q.get("batch").and_then(|s| s.parse().ok()).unwrap_or(1000);
     let want: Option<usize> = q.get("shard").and_then(|s| s.parse().ok());
-    let mut out = Vec::new();
+    let mut items = Vec::new();
     for i in 0..st.shards.len() {
         if want.is_some_and(|w| w != i) {
             continue;
         }
         let p = st.pool.clone();
         match tokio::task::spawn_blocking(move || p.scrub_shard_step(i, None, batch)).await {
-            Ok(Ok(r)) => out.push(format!(
-                "{{\"shard\":{i},\"checked\":{},\"corrupt\":{},\"repaired\":{},\"unrepairable\":{}}}",
-                r.checked, r.corrupt, r.repaired, r.unrepairable
-            )),
-            Ok(Err(e)) => out.push(json_shard_err(i, &e)),
-            Err(e) => out.push(json_shard_err(i, &e)),
+            Ok(Ok(r)) => items.push(types::ScrubItem {
+                shard: i,
+                checked: Some(r.checked),
+                corrupt: Some(r.corrupt),
+                repaired: Some(r.repaired),
+                unrepairable: Some(r.unrepairable),
+                error: None,
+            }),
+            Ok(Err(e)) => items.push(types::ScrubItem {
+                shard: i, checked: None, corrupt: None, repaired: None, unrepairable: None,
+                error: Some(e.to_string()),
+            }),
+            Err(e) => items.push(types::ScrubItem {
+                shard: i, checked: None, corrupt: None, repaired: None, unrepairable: None,
+                error: Some(e.to_string()),
+            }),
         }
     }
-    serde_json_like::Value(format!("[{}]", out.join(",")))
+    axum::Json(items)
 }
 
 /// POST /admin/zfs/scrub[?shard=N] — делегировать проверку контрольных сумм
@@ -420,32 +430,39 @@ async fn usage(State(st): State<AdminState>) -> axum::Json<Vec<types::UsageItem>
 async fn run_gc(
     State(st): State<AdminState>,
     Query(q): Query<HashMap<String, String>>,
-) -> serde_json_like::Value {
+) -> axum::Json<Vec<types::GcItem>> {
     let ratio = q
         .get("ratio")
         .and_then(|s| s.parse::<f64>().ok())
         .unwrap_or(st.gc_discard_ratio);
-    let mut out = Vec::new();
+    let mut items = Vec::new();
     for (i, s) in st.shards.iter().enumerate() {
         let s = s.clone();
         let r = tokio::task::spawn_blocking(move || s.gc(ratio)).await;
         match r {
             Ok(Ok(rep)) => {
-                st.pool.metrics().record_gc(&rep); // E14
-                out.push(format!(
-                "{{\"shard\":{i},\"victim\":{},\"moved\":{},\"reclaimed\":{},\"orphans\":{},\"orphan_bytes\":{}}}",
-                rep.victim_seg.map(|v| v.to_string()).unwrap_or_else(|| "null".into()),
-                rep.live_moved,
-                rep.reclaimed_bytes,
-                rep.orphans_removed,
-                rep.orphan_bytes
-                ));
+                st.pool.metrics().record_gc(&rep);
+                items.push(types::GcItem {
+                    shard: i,
+                    victim: rep.victim_seg,
+                    moved: rep.live_moved,
+                    reclaimed: rep.reclaimed_bytes,
+                    orphans: rep.orphans_removed,
+                    orphan_bytes: rep.orphan_bytes,
+                    error: None,
+                });
             }
-            Ok(Err(e)) => out.push(json_shard_err(i, &e)),
-            Err(e) => out.push(json_shard_err(i, &e)),
+            Ok(Err(e)) => items.push(types::GcItem {
+                shard: i, victim: None, moved: 0, reclaimed: 0, orphans: 0, orphan_bytes: 0,
+                error: Some(e.to_string()),
+            }),
+            Err(e) => items.push(types::GcItem {
+                shard: i, victim: None, moved: 0, reclaimed: 0, orphans: 0, orphan_bytes: 0,
+                error: Some(e.to_string()),
+            }),
         }
     }
-    serde_json_like::Value(format!("[{}]", out.join(",")))
+    axum::Json(items)
 }
 
 /// W17: используем serde_json для гарантированно валидного JSON.
