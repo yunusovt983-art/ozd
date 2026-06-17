@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! Типизированный Property-слой с Source-трекингом (#148, паттерн go-zfs
 //! properties.go): аксессоры Bytes/Percent/Ratio/Bool + источник значения
 //! (local/default/inherited) → дрифт-аудит конфигурации 60 пулов.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! E28 (#129, CRDB disk-stall): per-shard EWMA-латентность put/get —
 //! диск «жив, но умирает» (растущие сики, пре-отказная механика) ловится
 //! ДО того, как ZFS увидит ошибки чтения.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! E20 (#138, RustFS erasure-set): K data + M parity вместо зеркала —
 //! 1.5× по месту (4+2) против 2× (R=2) при выживании M отказов.
 //!

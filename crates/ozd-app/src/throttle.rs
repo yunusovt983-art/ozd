@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! E19 (#131, CRDB elastic admission): байтовый бюджет фоновых работ
 //! (GC/scrub/resilver/heal), чтобы фон не душил foreground put/get.
 //!

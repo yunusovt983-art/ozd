@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! ozd-admin — admin/metrics поверхность (Фаза 5: scrub/resilver/balancer).
 //! v1: usage-репорт по шардам + ручной запуск GC (#122).
 

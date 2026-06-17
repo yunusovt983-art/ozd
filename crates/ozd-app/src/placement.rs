@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! RendezvousHrw — взвешенный Rendezvous (HRW) hashing (#2).
 //!
 //! score(key, shard) = -weight / ln(h01(key, shard)), берём top-R по score.

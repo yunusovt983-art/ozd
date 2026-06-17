@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! Disk-health FSM (#142, паттерн RustFS): Online → Suspect → Faulted →
 //! Returning с ГИСТЕРЕЗИСОМ (N сбоев подряд / N успехов подряд) — одиночный
 //! глюк не валит диск, возврат — через probe-подтверждения.

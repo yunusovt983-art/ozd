@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! E14: операционные метрики пула (lock-free атомики, Prometheus-text).
 //! Без внешних crates: счётчики + суммы латентностей (avg/rate — в PromQL).
 

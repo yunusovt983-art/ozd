@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! Runner-порт (#146, паттерн go-zfs Manager.Runner): исполнение zfs/zpool
 //! через интерфейс → юнит-тесты адаптера БЕЗ zfs-бинаря (FakeRunner),
 //! Sudo-вариант для непривилегированного демона.

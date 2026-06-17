@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! ozd-zfs — адаптер ZFS-операций (порт из Go internal/zfspool, GO-MIGRATION P1;
 //! паттерны обвязки — из krystal/go-zfs, идеи #146–150).
 //!

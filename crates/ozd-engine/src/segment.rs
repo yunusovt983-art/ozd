@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! Pack-сегменты: append-only файлы ≤ segment_max_size (формат TON .pack /
 //! geth freezer / Kafka log, идеи #1/#10/#110-112).
 //!

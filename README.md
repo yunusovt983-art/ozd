@@ -186,3 +186,9 @@ CID ──► placement(CID, topology) ──► [ShardId₁ .. ShardId_R]   (to
 | Cargo.toml + CI + config | ~267 |
 | Документация (Wiki + README) | ~20 092 |
 | **Всего по проекту** | **~31 327** |
+
+## Лицензия
+
+Этот проект распространяется на условиях **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+
+Подробнее см. файл [LICENSE](LICENSE).

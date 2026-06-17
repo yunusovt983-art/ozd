@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! E25: «СуперДиск» (#143 Discord) — NVMe read-leg поверх пула HDD
 //! + request coalescing (#144).
 //!

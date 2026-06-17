@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! ozd-domain — ядро домена OpenZFS Daemon (без IO).
 //!
 //! Демон — слой между IPFS Kubo (через S3-протокол, go-ds-s3) и 60 HDD-дисками

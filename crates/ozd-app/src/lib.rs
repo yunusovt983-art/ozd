@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! ozd-app — use-cases поверх пула шардов: Pool (aggregate root) +
 //! RendezvousHrw placement. Часть 1 «sharding» из постановки:
 //! key → hash(key) → top-R дисков → записать блок.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! ozd — OpenZFS Daemon: S3-шлюз для Kubo поверх 60 HDD (sharding + packing).
 //!
 //! Запуск: `ozd --config ozd.toml` (дефолт ./ozd.toml).

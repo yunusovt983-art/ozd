@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! Pool (aggregate root): 60 дисков как один blockstore с R копиями.
 //!
 //! put → top-R по HRW → запись на R шардов, успех при ≥W (#3 quorum);

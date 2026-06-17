@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! E13: интеграционный тест SigV4-middleware на роутере (tower oneshot).
 
 use std::collections::HashMap;

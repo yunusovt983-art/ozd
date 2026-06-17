@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! E23: Range GET — 206 + Content-Range, верификация BLAKE3 при наличии
 //! outboard, 502 на порче в диапазоне, обычный 200 без Range.
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! ozd-engine — ShardEngine одного диска: pack-сегменты (data-tier) +
 //! redb-индекс (index-tier). Two-tier (#1): тела sequential на HDD,
 //! lookup по индексу (в проде — на NVMe, `index_path`).

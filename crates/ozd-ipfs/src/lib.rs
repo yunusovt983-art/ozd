@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! ozd-ipfs — S3-совместимый шлюз для IPFS Kubo (datastore-плагин go-ds-s3).
 //!
 //! Kubo конфигурируется на наш endpoint как на S3-bucket (см.

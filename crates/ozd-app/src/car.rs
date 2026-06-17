@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! E22 (#123, Badger StreamWriter-дух): bulk-залив/выгрузка CARv1 —
 //! массовое наполнение 60 дисков МИМО S3-пути запрос-за-запросом.
 //!

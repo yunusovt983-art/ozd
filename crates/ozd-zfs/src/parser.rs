@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! Парсер вывода `zpool status -p` (порт Go zfspool/pool.go parsePoolStatus).
 //! Без зависимостей: построчный разбор, числа точные (флаг -p).
 

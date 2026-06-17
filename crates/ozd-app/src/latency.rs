@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! E27: скользящий p99 латентности чтения — адаптивный hedge-порог
 //! (#121 Cassandra speculative retry «99percentile» вместо фикс-порога).
 //!

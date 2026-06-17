@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! E20/E21b: самоописанный конверт EC-куска (#139) — общий формат для
 //! ozd-app (encode/decode) и ozd-engine (recovery восстанавливает era-бит
 //! из хвоста сегмента парсом конверта). Без зависимостей.

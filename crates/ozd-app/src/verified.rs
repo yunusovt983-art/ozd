@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! E23 (#79, iroh-blobs): BLAKE3 outboard + verified range reads.
 //!
 //! Outboard = меркл-дерево BLAKE3 над телом (chunk-группы 16КБ → ~0.4%

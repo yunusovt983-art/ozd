@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 OpenZFS Daemon contributors
+
 //! E13: проверка AWS Signature V4 (header-auth, как шлёт go-ds-s3/aws-sdk-go).
 //!
 //! Канонизация — S3-стиль (как MinIO/RustFS): canonical URI = сырой path
