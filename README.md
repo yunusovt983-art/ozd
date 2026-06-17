@@ -209,10 +209,10 @@ CID ──► placement(CID, topology) ──► [ShardId₁ .. ShardId_R]   (to
 | `ozd-ipfs` | ~1 322 | IPFS-слой + SigV4 + async-адаптер + e2e-тест |
 | `ozd-zfs` | ~952 | Обёртка над OpenZFS CLI |
 | `ozd-daemon` | ~795 | Точка входа демона |
-| `ozd-admin` | ~480 | Админ-API + capacity planning |
+| `ozd-admin` | ~634 | Админ-API (typed responses, capacity planning) |
 | `ozd-bench` | ~335 | Бенчмарки |
 | `ozd-domain` | ~331 | Доменные типы |
-| **Итого .rs** | **~11 804** | |
+| **Итого .rs** | **~11 958** | |
 
 ### Документация и проектирование (`Wiki/`)
 
@@ -220,9 +220,9 @@ CID ──► placement(CID, topology) ──► [ShardId₁ .. ShardId_R]   (to
 |--------|-------|
 | Архитектура, планы, ADR | ~2 857 |
 | Arch_DDD (анализ 30+ систем) | ~12 747 |
-| Feynman-карточки (96 концептов) | ~3 753 |
-| Прочее (ROADMAP, KUBO, BENCH, WEEKLY-ARCS, GRAFANA…) | ~1 125 |
-| **Итого Wiki** | **~20 482** |
+| Feynman-карточки (96 концептов) | ~3 814 |
+| Прочее (ROADMAP, KUBO, BENCH, WEEKLY-ARCS, GRAFANA…) | ~1 132 |
+| **Итого Wiki** | **~20 550** |
 
 ### Инфраструктура (scripts + deployments)
 
@@ -237,10 +237,10 @@ CID ──► placement(CID, topology) ──► [ShardId₁ .. ShardId_R]   (to
 
 | Категория | Строк |
 |-----------|-------|
-| Rust-код | ~11 804 |
-| Документация (Wiki + README) | ~20 482 |
+| Rust-код | ~11 958 |
+| Документация (Wiki + README) | ~20 550 |
 | Инфраструктура (Docker, scripts, deploy) | ~559 |
-| **Всего по проекту** | **~32 845** |
+| **Всего по проекту** | **~33 067** |
 
 ## Лицензия
 
