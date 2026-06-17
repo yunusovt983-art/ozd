@@ -11,6 +11,7 @@
 //! Аутентификация v1: подпись SigV4 НЕ проверяется (демон слушает локально;
 //! Kubo требует ключи в конфиге — подойдут любые). TODO Часть 3: SigV4.
 
+pub mod async_adapter;
 pub mod sigv4;
 
 use std::sync::Arc;

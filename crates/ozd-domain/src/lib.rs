@@ -254,3 +254,20 @@ pub trait BlockStore: Send + Sync {
         limit: usize,
     ) -> DomainResult<Vec<(BlockKey, u64)>>;
 }
+
+/// W8.1: Async-версия BlockStore (подготовка к multi-node gateway'ям, Ч3).
+/// Использует RPITIT (Rust 1.75+). Sync-Pool заворачивается через
+/// `SpawnBlockingAdapter` без переписывания логики пула.
+pub trait AsyncBlockStore: Send + Sync {
+    fn put(&self, key: &BlockKey, data: Vec<u8>) -> impl std::future::Future<Output = DomainResult<()>> + Send;
+    fn get(&self, key: &BlockKey) -> impl std::future::Future<Output = DomainResult<Vec<u8>>> + Send;
+    fn stat(&self, key: &BlockKey) -> impl std::future::Future<Output = DomainResult<u64>> + Send;
+    fn has(&self, key: &BlockKey) -> impl std::future::Future<Output = DomainResult<bool>> + Send;
+    fn delete(&self, key: &BlockKey) -> impl std::future::Future<Output = DomainResult<()>> + Send;
+    fn list(
+        &self,
+        prefix: Vec<u8>,
+        after: Option<BlockKey>,
+        limit: usize,
+    ) -> impl std::future::Future<Output = DomainResult<Vec<(BlockKey, u64)>>> + Send;
+}
