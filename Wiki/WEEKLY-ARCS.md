@@ -451,9 +451,9 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 | Задача | Файл | Описание | Статус |
 |--------|------|----------|--------|
-| W27.1 | ozd-domain/src/lib.rs | Добавить `DomainError::Shutdown` вариант (вместо `Io("shutting down...")`) | ⬜ |
-| W27.2 | ozd-app/src/pool.rs | `Pool::put` возвращает `DomainError::Shutdown` вместо Io-строки | ⬜ |
-| W27.3 | ozd-ipfs/src/lib.rs | `map_err`: матчить `Shutdown` → 503 (убрать string-matching) | ⬜ |
+| W27.1 | ozd-domain/src/lib.rs | Добавить `DomainError::Shutdown` вариант (вместо `Io("shutting down...")`) | ✅ |
+| W27.2 | ozd-app/src/pool.rs | `Pool::put` возвращает `DomainError::Shutdown` вместо Io-строки | ✅ |
+| W27.3 | ozd-ipfs/src/lib.rs | `map_err`: матчить `Shutdown` → 503 (убрать string-matching) | ✅ |
 
 **Критерий:** `DomainError::Shutdown` матчится без парсинга строк; поведение 503 сохранено.
 
@@ -463,8 +463,8 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 | Задача | Файл | Описание | Статус |
 |--------|------|----------|--------|
-| W28.1 | ozd-ipfs/src/lib.rs | GET /healthz → JSON: `{"status":"ok","shards":N,"faulted":M,"shutting_down":bool}` | ⬜ |
-| W28.2 | ozd-ipfs/src/lib.rs | Передать `Pool` в AppState для доступа к shard_count/statuses/is_shutting_down | ⬜ |
+| W28.1 | ozd-ipfs/src/lib.rs | GET /healthz → JSON: `{"status":"ok","shards":N,"faulted":M,"shutting_down":bool}` | ✅ |
+| W28.2 | ozd-ipfs/src/lib.rs | Передать `Pool` в AppState для доступа к shard_count/statuses/is_shutting_down | ✅ |
 
 **Критерий:** /healthz возвращает JSON с актуальным состоянием пула; 200 если работает, 503 если shutdown.
 
@@ -474,8 +474,8 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 | Задача | Файл | Описание | Статус |
 |--------|------|----------|--------|
-| W29.1 | ozd-daemon/main.rs | SIGHUP handler: перечитать toml, обновить gc_interval/scrub_interval/bg_max | ⬜ |
-| W29.2 | ozd-app/src/throttle.rs | `BgThrottle::update_config(&self, new: BgThrottleConfig)` — atomic swap | ⬜ |
+| W29.1 | ozd-daemon/main.rs | SIGHUP handler: перечитать toml, обновить gc_interval/scrub_interval/bg_max | ✅ |
+| W29.2 | ozd-app/src/throttle.rs | `BgThrottle::update_config(&self, new: BgThrottleConfig)` — atomic swap | ✅ |
 
 **Критерий:** `kill -HUP <pid>` → лог "config reloaded"; изменённые параметры применяются без рестарта.
 
@@ -485,8 +485,8 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 | Задача | Файл | Описание | Статус |
 |--------|------|----------|--------|
-| W30.1 | ozd-admin/src/lib.rs | GET /admin/config → JSON с текущими runtime-параметрами (без секретов) | ⬜ |
-| W30.2 | ozd-admin/src/types.rs | `RuntimeConfig` struct (replicas, write_quorum, gc_ratio, bg_max, redundancy…) | ⬜ |
+| W30.1 | ozd-admin/src/lib.rs | GET /admin/config → JSON с текущими runtime-параметрами (без секретов) | ✅ |
+| W30.2 | ozd-admin/src/types.rs | `RuntimeConfig` struct (replicas, write_quorum, gc_ratio, bg_max, redundancy…) | ✅ |
 
 **Критерий:** оператор видит текущую конфигурацию без SSH на сервер; auth.secret_key НЕ отдаётся.
 
@@ -496,7 +496,7 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 | Задача | Файл | Описание | Статус |
 |--------|------|----------|--------|
-| W31.1 | ozd-admin/src/lib.rs | DELETE /admin/snapshot/old?keep=3 → удалить все snapshot'ы кроме N последних | ⬜ |
+| W31.1 | ozd-admin/src/lib.rs | DELETE /admin/snapshot/old?keep=3 → удалить все snapshot'ы кроме N последних | ✅ |
 
 **Критерий:** при keep=3 и 7 snapshot'ах — 4 удалено, 3 последних остались.
 
