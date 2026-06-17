@@ -42,6 +42,7 @@ pub fn router(
         .route("/admin/migrate", post(run_migrate))
         .route("/admin/car/import", post(car_import))
         .route("/admin/car/export", post(car_export))
+        .route("/admin/capacity", get(capacity_report))
         .route("/metrics", get(metrics))
         .with_state(AdminState { shards, pool, gc_discard_ratio, zfs })
 }
@@ -206,6 +207,46 @@ async fn ballast_release(
         }
     }
     serde_json_like::Value(format!("[{}]", out.join(",")))
+}
+
+/// W18: GET /admin/capacity — ёмкость и прогноз заполнения.
+/// Возвращает per-shard free/total/fill% + overall ETA до 95%.
+async fn capacity_report(State(st): State<AdminState>) -> serde_json_like::Value {
+    use std::sync::atomic::Ordering::Relaxed;
+    let mut total_bytes = 0u64;
+    let mut free_bytes = 0u64;
+    let mut shards_json = Vec::new();
+    for (i, s) in st.shards.iter().enumerate() {
+        let cap = s.usage().unwrap_or_default();
+        total_bytes += cap.total_bytes;
+        free_bytes += cap.free_bytes;
+        let fill_pct = if cap.total_bytes > 0 {
+            100.0 * (1.0 - cap.free_bytes as f64 / cap.total_bytes as f64)
+        } else {
+            0.0
+        };
+        shards_json.push(format!(
+            "{{\"shard\":{i},\"total\":{},\"free\":{},\"fill_pct\":{:.1}}}",
+            cap.total_bytes, cap.free_bytes, fill_pct
+        ));
+    }
+    let overall_fill = if total_bytes > 0 {
+        100.0 * (1.0 - free_bytes as f64 / total_bytes as f64)
+    } else {
+        0.0
+    };
+    // ETA до 95%: (free - 5% total) / write_rate_bps
+    let written = st.pool.metrics().bytes_written.load(Relaxed);
+    // write_rate не известен мгновенно — отдаём bytes_written,
+    // а rate(ozd_bytes_written_total[5m]) считает Prometheus/Grafana
+    let free_until_95 = free_bytes.saturating_sub(total_bytes / 20); // 95% порог
+    serde_json_like::Value(format!(
+        "{{\"total_bytes\":{total_bytes},\"free_bytes\":{free_bytes},\"fill_pct\":{:.1},\
+         \"bytes_written_total\":{written},\"free_until_95pct\":{free_until_95},\
+         \"shards\":[{}]}}",
+        overall_fill,
+        shards_json.join(",")
+    ))
 }
 
 /// GET /metrics — Prometheus text exposition (GO-MIGRATION P2, без зависимостей).

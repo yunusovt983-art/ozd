@@ -1523,9 +1523,12 @@ impl BlockStore for Pool {
         self.metrics.put_micros.fetch_add(el_us, Relaxed);
         self.metrics.put_hist.observe(el_us);
         match &r {
-            Ok(()) => self.metrics.puts.fetch_add(1, Relaxed),
-            Err(_) => self.metrics.put_errors.fetch_add(1, Relaxed),
-        };
+            Ok(()) => {
+                self.metrics.puts.fetch_add(1, Relaxed);
+                self.metrics.bytes_written.fetch_add(data.len() as u64, Relaxed);
+            }
+            Err(_) => { self.metrics.put_errors.fetch_add(1, Relaxed); }
+        }
         r
     }
 

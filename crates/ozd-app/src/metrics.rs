@@ -91,6 +91,8 @@ pub struct OpsMetrics {
     /// W4.3: текущие in-flight PUT/GET операции (gauge для backpressure мониторинга)
     pub inflight_puts: AtomicU64,
     pub inflight_gets: AtomicU64,
+    /// W18: кумулятивный объём записанных байт (rate → скорость роста → ETA заполнения)
+    pub bytes_written: AtomicU64,
     // отказоустойчивость записи/чтения
     pub hedged_reads: AtomicU64,
     pub handoff_writes: AtomicU64,
@@ -219,6 +221,8 @@ impl OpsMetrics {
         o.push_str(&format!("ozd_inflight_puts {}\n", self.inflight_puts.load(Relaxed)));
         o.push_str("# TYPE ozd_inflight_gets gauge\n");
         o.push_str(&format!("ozd_inflight_gets {}\n", self.inflight_gets.load(Relaxed)));
+        // W18: bytes_written counter
+        c("ozd_bytes_written_total", self.bytes_written.load(Relaxed), &mut o);
         o
     }
 }
