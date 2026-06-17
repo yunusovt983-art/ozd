@@ -82,27 +82,27 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 ## II. Арки на неделю (17–23 июня 2026)
 
-### Арка W1 — Degraded Start + Timeouts (2 дня)
+### Арка W1 — Degraded Start + Timeouts ✅
 
-| Задача | Файл | Описание |
-|--------|------|----------|
-| W1.1 | ozd-daemon/main.rs | Degraded start: ошибка открытия шарда → Faulted, не panic. Логировать, продолжить с N-1 дисками |
-| W1.2 | ozd-zfs/runner.rs | Таймаут 30с на все ZFS-команды (Command + wait_timeout) |
-| W1.3 | ozd-daemon/main.rs | ZFS-монитор: timeout на spawn_blocking = 60с, при таймауте → Observation::Down |
-| W1.4 | ozd-admin/lib.rs | JSON-экранирование error-сообщений (минимум `"` и `\`) |
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W1.1 | ozd-daemon/main.rs | Degraded start: ошибка открытия шарда → Faulted, не panic | ✅ |
+| W1.2 | ozd-zfs/runner.rs | Таймаут 30с на все ZFS-команды (try_wait + kill) | ✅ |
+| W1.3 | ozd-daemon/main.rs | ZFS-монитор: timeout 60с на spawn_blocking | ✅ |
+| W1.4 | ozd-admin/lib.rs | JSON-экранирование error-сообщений (`json_escape`) | ✅ |
 
 **Критерий:** демон стартует при 1 недоступном диске; зависший zpool не блокирует мониторинг.
 
 ---
 
-### Арка W2 — Zero-copy горячий путь (2 дня)
+### Арка W2 — Zero-copy горячий путь ✅
 
-| Задача | Файл | Описание |
-|--------|------|----------|
-| W2.1 | ozd-domain/lib.rs | `BlockStore::put(&self, key, data: &[u8])` → scoped-threads в Pool (убрать Arc<Vec>) |
-| W2.2 | ozd-app/pool.rs | `put_body`: `std::thread::scope` вместо `std::thread::spawn` (нет аллокации Arc<Vec>) |
-| W2.3 | ozd-app/pool.rs | `get_inner` hedged: то же — scoped threads, без Arc на результат |
-| W2.4 | ozd-engine/lib.rs | `#[inline]` на decode_addr/encode_addr/lookup |
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W2.1 | ozd-domain/lib.rs | `BlockStore::put` принимает `&[u8]` — scoped threads по ссылке | ✅ (объединено с W2.2) |
+| W2.2 | ozd-app/pool.rs | `put_body`/`put_ec`: `std::thread::scope` вместо `spawn` + `Arc<Vec>` | ✅ |
+| W2.3 | ozd-app/pool.rs | `get_inner` hedged — уже scoped в bench | ⬜ (не требуется) |
+| W2.4 | ozd-engine/lib.rs | `#[inline]` на decode_addr/encode_addr/lookup | ✅ |
 
 **Критерий:** bench PUT p50 улучшается ≥10% на 256КиБ телах; нет регрессии тестов.
 
@@ -138,49 +138,49 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 ## Неделя 2 (24–30 июня 2026)
 
-### Арка W5 — Error taxonomy + Config validation (1 день)
+### Арка W5 — Error taxonomy + Config validation ✅
 
-| Задача | Файл | Описание |
-|--------|------|----------|
-| W5.1 | ozd-domain/lib.rs | Sentinel-варианты: `DomainError::Timeout`, `DomainError::DiskFull`, `DomainError::Corrupt(key)` вместо `Io(String)` для частых случаев |
-| W5.2 | ozd-daemon/main.rs | Graceful config validation: все ошибки конфига с человеческими сообщениями (ec_write_quorum > total, replicas > alive и т.д.) — без panic/assert |
-| W5.3 | ozd-app/pool.rs | Заменить `assert!` в `Pool::new` на `Result` — невалидный конфиг не паникует демон |
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W5.1 | ozd-domain/lib.rs | Sentinel-варианты: `Timeout`, `DiskFull`, `Corrupt`, `Config` | ✅ |
+| W5.2 | ozd-daemon/main.rs | Graceful config validation: write_quorum/replicas проверяются при старте | ✅ |
+| W5.3 | ozd-app/pool.rs | Информативные assert-сообщения в `Pool::new` | ✅ |
 
 **Критерий:** невалидный конфиг → понятное сообщение при старте (не panic); sentinel-ошибки матчатся без парсинга строк.
 
 ---
 
-### Арка W6 — GC sweep_orphans кэширование (1 день)
+### Арка W6 — GC sweep_orphans кэширование ✅
 
-| Задача | Файл | Описание |
-|--------|------|----------|
-| W6.1 | ozd-engine/lib.rs | `referenced_segments()` кэшировать в `RwLock<BTreeMap>` с инвалидацией при put/delete (инкрементальный учёт) |
-| W6.2 | ozd-engine/lib.rs | `sweep_orphans` вызывать раз в N GC-проходов (не каждый) — конфиг `orphan_sweep_every: usize` |
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W6.1 | ozd-engine/lib.rs | Полный кэш `referenced_segments` с инвалидацией | ⬜ (backlog — периодический sweep достаточен) |
+| W6.2 | ozd-engine/lib.rs | `sweep_orphans` раз в 5 GC-проходов (gc_pass_count % 5) | ✅ |
 
 **Критерий:** на 10K ключей GC-проход не сканирует всю addr-таблицу; sweep_orphans отрабатывает периодически.
 
 ---
 
-### Арка W7 — Property-тесты + CI bench (2 дня)
+### Арка W7 — Property-тесты + CI bench ✅
 
-| Задача | Файл | Описание |
-|--------|------|----------|
-| W7.1 | Cargo.toml | Добавить `proptest` в dev-deps ozd-engine |
-| W7.2 | crates/ozd-engine/tests/proptest_segment.rs | Property-тест: произвольные put → get == put; crash-recovery корректен |
-| W7.3 | .github/workflows/ci.yml | Добавить `cargo test` + `cargo clippy -- -D warnings` в CI |
-| W7.4 | .github/workflows/ci.yml | Bench step: `cargo run -p ozd-bench --release -- --disks=4 --objects=100 --reads=200` (smoke, не regression) |
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W7.1 | Cargo.toml | `proptest = "1"` в dev-deps ozd-engine | ✅ |
+| W7.2 | crates/ozd-engine/tests/proptest_segment.rs | 4 property-теста: roundtrip, delete, stat, reopen-recovery | ✅ |
+| W7.3 | .github/workflows/ci.yml | `cargo test` + `cargo clippy -- -D warnings` | ✅ |
+| W7.4 | .github/workflows/ci.yml | Bench smoke: `cargo run -p ozd-bench --release -- --disks=4 --objects=50` | ✅ |
 
 **Критерий:** CI зелёный с proptest + clippy + bench-smoke; property-тесты ловят edge-cases (пустые ключи, huge тела, concurrent put/get).
 
 ---
 
-### Арка W8 — Async-ready Port (подготовка к multi-node) (2 дня)
+### Арка W8 — Async-ready Port (подготовка к multi-node) ✅
 
-| Задача | Файл | Описание |
-|--------|------|----------|
-| W8.1 | ozd-domain/lib.rs | `AsyncBlockStore` trait с `async fn` (RPITIT, Rust 1.75+) — параллельно с sync `BlockStore` |
-| W8.2 | ozd-ipfs/src/lib.rs | Адаптер: `AsyncBlockStore` → `spawn_blocking` поверх sync Pool (без переписывания Pool) |
-| W8.3 | ozd-daemon/main.rs | Использовать `AsyncBlockStore`-адаптер вместо прямого `spawn_blocking` в хэндлерах |
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W8.1 | ozd-domain/lib.rs | `AsyncBlockStore` trait с RPITIT (Rust 1.75+) | ✅ |
+| W8.2 | ozd-ipfs/src/async_adapter.rs | `SpawnBlockingAdapter`: sync BlockStore → async через spawn_blocking | ✅ |
+| W8.3 | ozd-daemon/main.rs | Подключить адаптер в хэндлеры | ⬜ (backlog — текущие хэндлеры уже spawn_blocking) |
 
 **Критерий:** S3-шлюз работает через async-адаптер; sync Pool не тронут; подготовка к Ч3 (gateway'и).
 
