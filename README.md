@@ -158,7 +158,7 @@ CID ──► placement(CID, topology) ──► [ShardId₁ .. ShardId_R]   (to
 
 | Крейт | Строк (.rs) | Назначение |
 |--------|------------|------------|
-| `ozd-app` | ~5 143 | Бизнес-логика (pool, cache, CAR, erasure, placement…) |
+| `ozd-app` | ~5 230 | Бизнес-логика (pool, cache, CAR, erasure, placement…) |
 | `ozd-engine` | ~2 142 | Движок сегментов |
 | `ozd-ipfs` | ~1 087 | IPFS-слой + SigV4 + тесты |
 | `ozd-zfs` | ~965 | Обёртка над OpenZFS CLI |
@@ -166,7 +166,7 @@ CID ──► placement(CID, topology) ──► [ShardId₁ .. ShardId_R]   (to
 | `ozd-admin` | ~432 | Админ-API |
 | `ozd-bench` | ~335 | Бенчмарки |
 | `ozd-domain` | ~302 | Доменные типы |
-| **Итого .rs** | **~11 188** | |
+| **Итого .rs** | **~11 275** | |
 
 ### Документация и проектирование (`Wiki/`)
 
@@ -175,17 +175,17 @@ CID ──► placement(CID, topology) ──► [ShardId₁ .. ShardId_R]   (to
 | Архитектура, планы, ADR | ~2 857 |
 | Arch_DDD (анализ 30+ систем) | ~12 747 |
 | Feynman-карточки (95 концептов) | ~3 692 |
-| Прочее (ROADMAP, KUBO, BENCH, WEEKLY-ARCS…) | ~820 |
-| **Итого Wiki** | **~20 116** |
+| Прочее (ROADMAP, KUBO, BENCH, WEEKLY-ARCS, GRAFANA…) | ~918 |
+| **Итого Wiki** | **~20 214** |
 
 ### Общий итог
 
 | Категория | Строк |
 |-----------|-------|
-| Rust-код | ~11 188 |
+| Rust-код | ~11 275 |
 | Cargo.toml + CI + config | ~288 |
-| Документация (Wiki + README) | ~20 116 |
-| **Всего по проекту** | **~31 592** |
+| Документация (Wiki + README) | ~20 214 |
+| **Всего по проекту** | **~31 777** |
 
 ## Лицензия
 
