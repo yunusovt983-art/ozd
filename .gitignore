@@ -19,3 +19,6 @@ ozd.toml
 .idea/
 .vscode/
 *.swp
+
+# Kiro (IDE-конфиг — локальный)
+.kiro/
