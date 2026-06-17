@@ -1499,7 +1499,9 @@ impl BlockStore for Pool {
     fn put(&self, key: &BlockKey, data: &[u8]) -> DomainResult<()> {
         use std::sync::atomic::Ordering::Relaxed;
         let t0 = Instant::now();
+        self.metrics.inflight_puts.fetch_add(1, Relaxed);
         let r = self.put_inner(key, data);
+        self.metrics.inflight_puts.fetch_sub(1, Relaxed);
         let el_us = t0.elapsed().as_micros() as u64;
         self.metrics.put_micros.fetch_add(el_us, Relaxed);
         self.metrics.put_hist.observe(el_us);
@@ -1513,7 +1515,9 @@ impl BlockStore for Pool {
     fn get(&self, key: &BlockKey) -> DomainResult<Vec<u8>> {
         use std::sync::atomic::Ordering::Relaxed;
         let t0 = Instant::now();
+        self.metrics.inflight_gets.fetch_add(1, Relaxed);
         let r = self.get_inner(key);
+        self.metrics.inflight_gets.fetch_sub(1, Relaxed);
         let el = t0.elapsed();
         let el_us = el.as_micros() as u64;
         self.metrics.get_micros.fetch_add(el_us, Relaxed);

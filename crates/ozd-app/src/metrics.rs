@@ -88,6 +88,9 @@ pub struct OpsMetrics {
     /// W4.1: histogram GET-латентности
     pub get_hist: Histogram,
     pub deletes: AtomicU64,
+    /// W4.3: текущие in-flight PUT/GET операции (gauge для backpressure мониторинга)
+    pub inflight_puts: AtomicU64,
+    pub inflight_gets: AtomicU64,
     // отказоустойчивость записи/чтения
     pub hedged_reads: AtomicU64,
     pub handoff_writes: AtomicU64,
@@ -211,6 +214,11 @@ impl OpsMetrics {
         c("ozd_gc_reclaimed_bytes_total", self.gc_reclaimed_bytes.load(Relaxed), &mut o);
         c("ozd_gc_orphans_total", self.gc_orphans.load(Relaxed), &mut o);
         c("ozd_gc_orphan_bytes_total", self.gc_orphan_bytes.load(Relaxed), &mut o);
+        // W4.3: inflight gauge
+        o.push_str("# TYPE ozd_inflight_puts gauge\n");
+        o.push_str(&format!("ozd_inflight_puts {}\n", self.inflight_puts.load(Relaxed)));
+        o.push_str("# TYPE ozd_inflight_gets gauge\n");
+        o.push_str(&format!("ozd_inflight_gets {}\n", self.inflight_gets.load(Relaxed)));
         o
     }
 }
