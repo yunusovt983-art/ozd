@@ -158,15 +158,15 @@ CID ──► placement(CID, topology) ──► [ShardId₁ .. ShardId_R]   (to
 
 | Крейт | Строк (.rs) | Назначение |
 |--------|------------|------------|
-| `ozd-app` | ~5 103 | Бизнес-логика (pool, cache, CAR, erasure, placement…) |
-| `ozd-engine` | ~2 133 | Движок сегментов |
-| `ozd-ipfs` | ~1 075 | IPFS-слой + SigV4 + тесты |
-| `ozd-zfs` | ~914 | Обёртка над OpenZFS CLI |
-| `ozd-daemon` | ~712 | Точка входа демона |
-| `ozd-admin` | ~403 | Админ-API |
-| `ozd-bench` | ~332 | Бенчмарки |
-| `ozd-domain` | ~296 | Доменные типы |
-| **Итого .rs** | **~10 968** | |
+| `ozd-app` | ~5 139 | Бизнес-логика (pool, cache, CAR, erasure, placement…) |
+| `ozd-engine` | ~2 139 | Движок сегментов |
+| `ozd-ipfs` | ~1 087 | IPFS-слой + SigV4 + тесты |
+| `ozd-zfs` | ~926 | Обёртка над OpenZFS CLI |
+| `ozd-daemon` | ~715 | Точка входа демона |
+| `ozd-admin` | ~406 | Админ-API |
+| `ozd-bench` | ~335 | Бенчмарки |
+| `ozd-domain` | ~302 | Доменные типы |
+| **Итого .rs** | **~11 049** | |
 
 ### Документация и проектирование (`Wiki/`)
 
@@ -182,10 +182,10 @@ CID ──► placement(CID, topology) ──► [ShardId₁ .. ShardId_R]   (to
 
 | Категория | Строк |
 |-----------|-------|
-| Rust-код | ~10 968 |
-| Cargo.toml + CI + config | ~267 |
+| Rust-код | ~11 049 |
+| Cargo.toml + CI + config | ~288 |
 | Документация (Wiki + README) | ~20 092 |
-| **Всего по проекту** | **~31 327** |
+| **Всего по проекту** | **~31 429** |
 
 ## Лицензия
 
