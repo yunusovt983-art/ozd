@@ -231,24 +231,81 @@ CAP = 100_000 элементов, но `HashMap<BlockKey, HealPriority>` не ч
 
 ---
 
-### Арка W13 — Документация: README v2 + CONTRIBUTING (1 день)
+### Арка W13 — Документация: README v2 + CONTRIBUTING ✅
 
 | Задача | Файл | Описание | Статус |
 |--------|------|----------|--------|
-| W13.1 | README.md | Секция «Quick Start» (cargo build, запуск, первый PUT/GET через curl) | ⬜ |
-| W13.2 | CONTRIBUTING.md | Гайд для контрибьюторов: структура крейтов, как запустить тесты, DDD-правила | ⬜ |
-| W13.3 | Wiki/WEEKLY-ARCS.md | Обновить статусы W9–W13, подвести итог 3 недель | ✅ |
-
-**Критерий:** новый контрибьютор может запустить проект за 5 минут по README.
+| W13.1 | README.md | Секция «Quick Start» (cargo build, запуск, PUT/GET через curl, Docker) | ✅ |
+| W13.2 | CONTRIBUTING.md | Гайд: структура крейтов, DDD-правила, тесты, коммиты | ✅ |
+| W13.3 | Wiki/WEEKLY-ARCS.md | Статусы W9–W13 обновлены | ✅ |
 
 ---
 
-## Приоритизация (MoSCoW) — Неделя 3
+## Неделя 4 (8–14 июля 2026)
+
+### Арка W14 — Integration test: Kubo end-to-end в CI (2 дня)
+
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W14.1 | .github/workflows/integration.yml | CI workflow: build ozd → запустить → smoke-тест (без Docker, localhost) | ⬜ |
+| W14.2 | scripts/kubo_smoke.sh | Расширить: множественные ключи, large body (1МиБ), Range GET | ⬜ |
+| W14.3 | crates/ozd-ipfs/tests/e2e_s3.rs | Rust-тест: axum TestServer → полный цикл PUT/GET/HEAD/LIST/DELETE | ⬜ |
+
+**Критерий:** CI запускает integration-тест без Docker; Range GET + large body покрыты.
+
+---
+
+### Арка W15 — Criterion benchmarks + regression detection (1 день)
+
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W15.1 | Cargo.toml + crates/ozd-bench/ | criterion в dev-deps; bench группы: put/get/ec-encode/placement | ⬜ |
+| W15.2 | .github/workflows/ci.yml | `cargo bench` с `--output-format` → сохранить артефакт (baseline) | ⬜ |
+
+**Критерий:** `cargo bench` выдаёт стабильные числа; CI сохраняет baseline для сравнения.
+
+---
+
+### Арка W16 — Flaky-тесты: детерминизм timing-тестов (1 день)
+
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W16.1 | ozd-app/pool.rs tests | Увеличить допуски timing-тестов (parallel_put, speculative) + retry-wrapper | ⬜ |
+| W16.2 | ozd-app/pool.rs | Injection-шов для времени в hedged-read (как RollingP99 уже имеет) | ⬜ |
+
+**Критерий:** `cargo test -p ozd-app` проходит 10 раз подряд без flake на CI.
+
+---
+
+### Арка W17 — Admin API v2: structured JSON responses (1 день)
+
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W17.1 | Cargo.toml | Добавить `serde_json` в deps ozd-admin (уже есть serde) | ⬜ |
+| W17.2 | ozd-admin/lib.rs | Заменить ручной format! → `serde_json::to_string` (типобезопасно) | ⬜ |
+| W17.3 | ozd-admin/lib.rs | Structured response types: `GcResponse`, `ScrubResponse` и т.д. | ⬜ |
+
+**Критерий:** все /admin/ ответы — валидный JSON при любых входных данных; типы сериализуются derive(Serialize).
+
+---
+
+### Арка W18 — Capacity planning: прогноз заполнения (1 день)
+
+| Задача | Файл | Описание | Статус |
+|--------|------|----------|--------|
+| W18.1 | ozd-app/metrics.rs | Счётчик `ozd_bytes_written_total` (кумулятивный; rate → скорость роста) | ⬜ |
+| W18.2 | ozd-admin/lib.rs | GET /admin/capacity → JSON: per-shard free/total/fill% + overall ETA до 95% | ⬜ |
+
+**Критерий:** оператор видит «при текущей скорости диски заполнятся через N дней».
+
+---
+
+## Приоритизация (MoSCoW) — Неделя 4
 
 | Must | Should | Could | Won't (эта неделя) |
 |------|--------|-------|---------------------|
-| W9 Kubo-smoke (docker) | W11 reed-solomon-simd | W13 docs | Multi-node (Ч3) |
-| W10 gen_config + systemd | W12 hardening | | Стенд на полке (E31/E32) |
+| W14 integration-тест CI | W16 flaky fix | W18 capacity planning | Kubo-стенд на полке (E30) |
+| W15 criterion bench | W17 admin JSON v2 | | Multi-node (Ч3) |
 
 1. **async/await переход Pool** — сейчас sync + thread::spawn. Для multi-node (Ч3) нужен настоящий async.
 2. **Property-тесты** — proptest для segment format (PLAN Ф1). Нет ни одного.
