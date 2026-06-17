@@ -1,19 +1,23 @@
-# W9.1: Kubo + go-ds-s3 → ozd (интеграционный smoke без сервера)
+# W9.2: Kubo + go-ds-s3 → ozd (интеграционный smoke)
 #
 # Запуск: docker compose up --build
 # Тест:   ./scripts/kubo_smoke.sh
+#         ipfs --api=/ip4/127.0.0.1/tcp/5001 add <файл>
 #
 # Архитектура:
 #   ozd (порт 9100) ← S3 API ← Kubo go-ds-s3 плагин (блоки /blocks/)
 #   Kubo API: порт 5001 (ipfs add/cat/pin)
+#   Kubo Gateway: порт 8080 (ipfs://Qm... → HTTP)
 #
 # ozd работает с 3 tmpfs-дисками (данные в RAM — быстро, без персистентности).
+# Kubo собирается из исходников с встроенным go-ds-s3 модулем.
 
 services:
   ozd:
     build:
       context: ../..
       dockerfile: deployments/docker/Dockerfile.ozd
+    container_name: ozd
     ports:
       - "9100:9100"
     tmpfs:
@@ -22,18 +26,34 @@ services:
       - /data/disk2
     environment:
       - RUST_LOG=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9100/healthz"]
+      interval: 5s
+      timeout: 2s
+      retries: 3
 
   kubo:
-    image: ipfs/kubo:v0.32.1
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.kubo
+    container_name: kubo
     depends_on:
       ozd:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "5001:5001"  # API
       - "4001:4001"  # Swarm
       - "8080:8080"  # Gateway
-    environment:
-      - IPFS_PROFILE=server
     volumes:
-      - ./kubo-init.sh:/container-init.d/001-s3ds.sh:ro
-    entrypoint: ["/bin/sh", "-c", "chmod +x /container-init.d/001-s3ds.sh && /container-init.d/001-s3ds.sh && ipfs daemon --migrate"]
+      - ./kubo-init.sh:/entrypoint.sh:ro
+      - kubo_data:/data/ipfs
+    environment:
+      - IPFS_PATH=/data/ipfs
+    entrypoint: ["/bin/sh"]
+    command: [
+      "-c",
+      "chmod +x /entrypoint.sh && /entrypoint.sh && exec ipfs daemon --enable-gc"
+    ]
+
+volumes:
+  kubo_data:

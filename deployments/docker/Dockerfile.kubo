@@ -1,0 +1,31 @@
+# W9.2: Kubo с go-ds-s3 плагином для ozd
+# Сборка Kubo из исходников с встроенным s3ds датастором
+
+FROM golang:1.22-bullseye AS builder
+WORKDIR /build
+
+# Клонируем Kubo и go-ds-s3
+RUN git clone --depth 1 --branch v0.32.1 https://github.com/ipfs/kubo.git . && \
+    git clone --depth 1 https://github.com/ipfs-shipyard/go-ds-s3.git ./go-ds-s3-src
+
+# Пулим зависимость go-ds-s3 в модули Kubo
+# (Способ 1: простой require + tidy; Способ 2: patch с локальной папкой)
+RUN cd /build && go mod edit -require github.com/ipfs-shipyard/go-ds-s3@v0.10.0 && \
+    go mod edit -replace github.com/ipfs-shipyard/go-ds-s3=./go-ds-s3-src && \
+    go mod tidy
+
+# Собираем Kubo с включённым go-ds-s3
+RUN make build
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates jq && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/cmd/ipfs/ipfs /usr/local/bin/ipfs
+RUN chmod +x /usr/local/bin/ipfs
+
+# Инициализация профиля и конфига go-ds-s3 при старте
+VOLUME ["/data/ipfs"]
+ENV IPFS_PATH=/data/ipfs
+
+ENTRYPOINT ["/bin/sh", "-c"]
+CMD ["ipfs daemon --enable-gc"]
