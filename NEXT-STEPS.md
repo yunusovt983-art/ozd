@@ -1,539 +1,113 @@
-# NEXT STEPS: Plan after W9 Phase 2
+# NEXT STEPS
 
-**Дата:** 2026-06-19  
-**Текущий статус:** W9 Phase 2 ✅ (Kubo + go-ds-s3 Dockerfile завершены)  
-**Следующее:** W10 (Config Generator + systemd) → Week 4 (W14–W18)
+**Дата:** 2026-06-19
+**Источники истины:** [Wiki/ROADMAP.md](Wiki/ROADMAP.md), [Wiki/WEEKLY-ARCS.md](Wiki/WEEKLY-ARCS.md)
 
----
-
-## Immediate (W10) — 1–2 дня
-
-### W10: Config Generator + systemd
-
-**Файлы:**
-- `scripts/gen_config.sh` — пуллит `zpool list`, генерирует `ozd.toml`
-- `deployments/ozd.service` — systemd unit
-- `ozd.example.toml` — полный пример с новыми полями
-
-**План:**
-
-```bash
-# W10.1: gen_config.sh
-# Input: --disks=/dev/disk{0,1,2...} --index-path=/mnt/nvme или env vars
-# Output: ozd.toml с [[disks]] и сенсибл дефолтами
-# Features:
-#   - Проверка доступности дисков (test mount)
-#   - Расчёт segment_size (256МБ для 60 HDD, 64МБ для dev)
-#   - Комментарии с рекомендациями (replicas=2, write_quorum=2)
-#   - Вывод в stdout или --output ozd.toml
-
-# W10.2: systemd unit
-# deployments/ozd.service
-# - User=ozd (создан)
-# - ExecStart=./target/release/ozd --config /etc/ozd/ozd.toml
-# - Restart=always, RestartSec=5
-# - LimitNOFILE=1000000
-# - ReadWritePaths=/data/*
-# - Type=notify (если добавим sd_notify в main.rs)
-
-# W10.3: ozd.example.toml обновить
-# Добавить комментарии про:
-#   - migrate_interval_secs (дефолт 3600)
-#   - migrate_keys_per_cycle (дефолт 10000)
-#   - snapshot_dir (опционально)
-#   - rate_limit_rps (опционально, дефолт 0 = отключен)
-```
-
-**Критерий:** `./scripts/gen_config.sh --disks=/data/disk{0,1,2} > ozd.toml && systemctl start ozd` работает.
+> ⚠️ Предыдущая версия этого файла ошибочно планировала W10–W31 как будущую
+> работу. На деле **все они уже закрыты** (см. WEEKLY-ARCS.md). Этот файл
+> переписан под реальное состояние.
 
 ---
 
-## Week 4 (June 23–27) — Integration Testing Phase
+## TL;DR
 
-### W14: Integration Test in CI
+**Вся работа, не требующая железа, завершена.** Готово:
+- **Арки 1–7** (ROADMAP): каркас, sharding+packing, самовосстановление, формат
+  данных (zstd/EC 4+2/CAR/BLAKE3), СуперДиск (CacheTier), доводка p99.
+- **Weekly W1–W31** (WEEKLY-ARCS): degraded-start, таймауты, zero-copy, метрики,
+  Grafana, error-taxonomy, proptest, CI, async-порт, Docker+Kubo, **W10
+  gen_config+systemd**, hardening, typed admin API, JSON-логи, graceful
+  shutdown v2, rate-limiter, snapshots/backup, healthz v2, SIGHUP, retention.
 
-**Файлы:**
-- `.github/workflows/ci.yml` → добавить job `integration`
-- `scripts/kubo_smoke.sh` → расширить до 12 проверок
-- `crates/ozd-ipfs/tests/e2e_s3.rs` → новый e2e-тест
-
-**План:**
-
-#### W14.1: CI integration job
-
-```yaml
-# .github/workflows/ci.yml
-integration:
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v3
-    - uses: actions-rs/toolchain@v1
-    - name: Build ozd
-      run: cargo build --release -p ozd-daemon
-    - name: Start ozd
-      run: |
-        mkdir -p {disk0,disk1,disk2}
-        ./target/release/ozd --config deployments/docker/smoke-local.toml &
-        sleep 3
-    - name: Smoke test
-      run: bash scripts/kubo_smoke.sh http://localhost:9100
-    - name: E2E test
-      run: cargo test -p ozd-ipfs --test e2e_s3 -- --ignored --nocapture
-```
-
-#### W14.2: куbo_smoke.sh → 12 checks
-
-```bash
-# Существующие 8:
-# 1. healthz
-# 2. PUT small
-# 3. GET (body match)
-# 4. HEAD (content-length)
-# 5. ListV2
-# 6. DELETE
-# 7. 404 after DELETE
-# 8. /metrics
-
-# Новые 4:
-# 9. PUT 1МиБ large body
-# 10. Range GET bytes=0-99 (subset)
-# 11. Batch 10 keys in parallel (concurrent)
-# 12. ListV2 with marker/continuation
-```
-
-#### W14.3: e2e_s3.rs test
-
-```rust
-// crates/ozd-ipfs/tests/e2e_s3.rs
-#[tokio::test]
-#[ignore] // запускается в CI
-async fn test_put_get_100kib() {
-    // Start ozd with embedded tmpfs
-    // PUT 100КиБ body
-    // GET и verify body
-    // DELETE
-    // Проверить полу integration через S3Client
-}
-
-#[tokio::test]
-#[ignore]
-async fn test_concurrent_put_get() {
-    // 10 PUT + 10 GET параллельно
-    // Все должны успешно завершиться
-}
-```
-
-**Критерий:** CI проходит; smoke-тест + e2e-тест зелёные.
+**Следующая настоящая работа требует сервера** (Арка 8). До его появления
+остаются только: (1) проверка W9 Phase 2 локально под Docker и (2) опциональный
+backlog.
 
 ---
 
-### W15: Criterion Benchmarks + Regression Detection
+## Что осталось без железа
 
-**Файлы:**
-- `crates/ozd-engine/benches/` → criterion benchmarks
-- `.github/workflows/ci.yml` → bench job + artifact
+### 1. Верификация W9 Phase 2 (Kubo + go-ds-s3) — единственный незакрытый софт-шаг
 
-**План:**
+Файлы созданы (Dockerfile.kubo, kubo-init.sh, docker-compose обновлён), но
+**образ ни разу не собирался и не запускался**. Это прямой предшественник E30.
 
-#### W15.1: Criterion setup
+- [ ] `docker compose -f deployments/docker/docker-compose.yml build` — проверить,
+      что Kubo с go-ds-s3 модулем вообще собирается (риск: версия go-ds-s3 vs Kubo
+      v0.32.1, см. KUBO-INTEGRATION.md).
+- [ ] `docker compose up` → дождаться healthcheck ozd → Kubo поднялся.
+- [ ] `ipfs --api=/ip4/127.0.0.1/tcp/5001 add <файл>` → блок улетел в ozd.
+- [ ] `ipfs cat <hash>` → бит-в-бит совпадает.
+- [ ] `bash scripts/kubo_smoke.sh` зелёный против того же ozd.
 
-```bash
-# crates/ozd-engine/Cargo.toml
-[dev-dependencies]
-criterion = "0.5"
+**Если go-ds-s3 не собирается:** fallback — pre-built образ с плагином, либо
+зафиксировать совместимую пару версий. Задокументировать результат в
+deployments/docker/README-W9.md.
 
-# crates/ozd-engine/benches/storage.rs
-#[path = "../../benches/storage.rs"]
-mod benches {
-    use criterion::{black_box, criterion_group, criterion_main, Criterion};
-    
-    fn put_inline(c: &mut Criterion) {
-        // Benchmark: DiskEngine::put(key, 100B inline)
-        // Expect: < 1ms p50
-    }
-    
-    fn put_segment(c: &mut Criterion) {
-        // Benchmark: DiskEngine::put(key, 256KiB in segment)
-        // Expect: < 10ms p50
-    }
-    
-    fn get_64kib(c: &mut Criterion) {
-        // Benchmark: DiskEngine::get(key) with 64KiB body
-        // Expect: < 5ms p50
-    }
-    
-    fn stat_obj(c: &mut Criterion) {
-        // Benchmark: DiskEngine::stat(key)
-        // Expect: < 0.5ms p50
-    }
-}
-```
+**Критерий:** `ipfs add`→`ipfs cat` roundtrip через ozd на dev-машине под Docker.
+Это закрывает «E15/E30 без сервера» настолько, насколько возможно без полки.
 
-#### W15.2: CI bench job
+### 2. Backlog (всё помечено «не требуется сейчас» — делать только по необходимости)
 
-```yaml
-bench:
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v3
-    - run: cargo bench -p ozd-engine --bench storage
-    - name: Upload baseline
-      uses: actions/upload-artifact@v3
-      with:
-        name: criterion-baseline
-        path: target/criterion
-        retention-days: 30
-```
-
-**Критерий:** `cargo bench` выдаёт стабильные числа; CI сохраняет baseline для сравнения.
+| ID | Что | Почему отложено | Когда вернуться |
+|----|-----|-----------------|-----------------|
+| W3 | Per-disk worker pool (bounded channel) | scoped threads уже сняли thread-exhaustion | если замер E32 покажет contention |
+| W6.1 | Полный кэш `referenced_segments` с инвалидацией | периодический sweep (раз в 5 проходов) достаточен | если GC-скан станет узким местом на масштабе |
+| W8.3 | Async-адаптер в хэндлерах | хэндлеры уже `spawn_blocking` | при переходе на multi-node (Арка 9) |
+| W11 | reed-solomon-simd (GF 2^16) | breaking-change формата (сейчас GF 2^8) | при переходе на формат v2 |
 
 ---
 
-### W16: Flaky Tests Fix
+## Арка 8 — требует сервера (E30 → E31 → E32)
 
-**Проблема:** Тесты `parallel_put_latency_is_max_not_sum`, `speculative_retry_hedges_slow_read_leg` на CI могут флаповать из-за timing.
+> Порядок ROADMAP: E30 первым, как только есть железо.
 
-**План:**
+### E30 — Kubo-стенд (= E15)
+Реальный Kubo+go-ds-s3 → ozd по [KUBO-INTEGRATION.md](Wiki/KUBO-INTEGRATION.md):
+SigV4-канонизация, `ipfs add/cat/pin/gc`, первый реальный hit-rate СуперДиска.
+**Критерий:** `ipfs add`→`ipfs cat` бит-в-бит; блоки в /metrics; SigV4 — 0 отказов.
 
-```rust
-// ozd-app/src/pool.rs — existing tests
+> Заметка: верификация W9 Phase 2 (выше) — это E30 «в миниатюре» на tmpfs под
+> Docker. Полный E30 = то же на реальном Kubo-трафике на сервере.
 
-// Before:
-assert!(latency_put < 150ms + 150ms);  // sum = 300ms, flaky на CI
+### E31 — Деплой на полку
+gen_config.sh (✅ готов) на 60 дисков → systemd (✅ готов) → runbook (zpool
+create/tuning из шапки ozd.example.toml) → Grafana-дашборд (✅ GRAFANA.md).
+**Критерий:** демон стартует на полке с identity-чеком #149; дашборд живой.
 
-// After:
-assert!(latency_put < 400ms);  // 260ms + buffer для CI slowdown
-assert!(hedged_latency < 400ms);  // вместо 250ms
-```
-
-**Критерий:** `cargo test -p ozd-app -- --test-threads=1` проходит 10 раз подряд без flake.
-
----
-
-### W17: Admin API v2 — serde_json Validation
-
-**Файлы:**
-- `ozd-admin/Cargo.toml` → добавить `serde_json = "1"`
-- `ozd-admin/src/lib.rs` → обновить JSON-handl в через serde_json
-
-**План:**
-
-```rust
-// ozd-admin/src/lib.rs
-use serde_json;
-
-// Before: ручной format!() JSON
-let json = format!(r#"{{"status":"{}","bytes":{}}}"#, status, bytes);
-
-// After: serde_json::Value или typed struct
-let response = json!({
-    "status": status,
-    "bytes": bytes,
-});
-axum::Json(response).into_response()
-
-// Невалидный JSON при any input → 500 с clear error
-```
-
-**Критерий:** все /admin/ ответы — валидный JSON при любых входных данных.
+### E32 — Нагрузка на полке
+Профиль реального трафика → тюнинг (ec_min_size, cache max_bytes, bg-бюджеты,
+scrub-каденс) + хаос-смоук (выдернуть диск под нагрузкой → resilver при живом
+трафике). Здесь же закрываются «→ E32 на железе» хвосты: RSS-замер #64
+sync_file_range (E26), /proc/diskstats (E28).
+**Критерий:** p99 чтения и время ребилда в docs/BENCH.md; throttle держит foreground.
 
 ---
 
-### W18: Capacity Planning
+## Арка 9 — Часть 3: мультиузел / P2P 🧊 (после Арки 8)
 
-**Файлы:**
-- `ozd-app/src/metrics.rs` → добавить `bytes_written` counter
-- `ozd-admin/src/lib.rs` → GET /admin/capacity
-
-**План:**
-
-```rust
-// ozd-app/src/pool.rs — при каждом PUT
-metrics.bytes_written.fetch_add(body.len() as u64, Ordering::Relaxed);
-
-// ozd-admin/src/lib.rs
-// GET /admin/capacity
-// Response:
-// {
-//   "total_bytes": 60TB,
-//   "used_bytes": 30TB,
-//   "free_bytes": 30TB,
-//   "write_rate_mbps": 150.5,
-//   "estimated_days_to_95pct": 120,
-//   "shards": [
-//     {"id": 0, "fill_pct": 50.1, ...},
-//     ...
-//   ]
-// }
-```
-
-**Критерий:** оператор видит перспективу заполнения (N дней до 95%).
+E33 Merkle anti-entropy · E34 Tombstone+gc_grace · E35 Fencing+мульти-шлюз ·
+E36 P2P verified fetch (фундамент готов: x-ozd-bao + verify_bao_slice).
+Заморожено до стабилизации одной ноды.
 
 ---
 
-## Week 5 (June 30 – July 4) — API Hardening Phase
+## Архитектурные долги (из WEEKLY-ARCS §V — следить, не срочно)
 
-### W19: Typed Admin API
-
-**Файлы:**
-- `ozd-admin/src/types.rs` → 13 typed structs
-- `ozd-admin/src/lib.rs` → все хэндлеры на `axum::Json<T>`
-
-**План:**
-
-```rust
-// ozd-admin/src/types.rs
-#[derive(Serialize, Deserialize)]
-pub struct HealthResponse {
-    pub status: String,  // "ok", "degraded", "shutdown"
-    pub shards: u32,
-    pub faulted: u32,
-}
-
-#[derive(Serialize)]
-pub struct CapacityResponse {
-    pub total_bytes: u64,
-    pub used_bytes: u64,
-    pub free_bytes: u64,
-    pub write_rate_mbps: f64,
-}
-
-// ... 11 больше
-
-// ozd-admin/src/lib.rs
-async fn healthz(
-    State(pool): State<Arc<Pool>>,
-) -> axum::Json<HealthResponse> {
-    axum::Json(HealthResponse {
-        status: pool.status_string(),
-        shards: pool.shard_count(),
-        faulted: pool.faulted_count(),
-    })
-}
-```
-
-**Критерий:** все /admin/ через `axum::Json<T>`, ручной JSON удалён.
+1. **Sync-only Pool** — вся логика пула синхронна (thread::scope). Multi-node
+   (Арка 9) потребует настоящего async. Задел есть: `AsyncBlockStore` +
+   `SpawnBlockingAdapter` (W8) готовы, но не подключены (W8.3 backlog).
+2. **Один redb на шард** — при 3.8 млрд ключей redb-файл ~200 ГБ; backup/compaction
+   не контролируем. Рассмотреть sharded-redb (split по prefix) или rocksdb/fjall
+   при росте. Не блокер до реального масштаба.
 
 ---
 
-### W20: Structured Logging (tracing)
+## Рекомендация
 
-**Файлы:**
-- `ozd-daemon/main.rs` → `tracing_subscriber::fmt().json()`
-- `ozd-app/src/pool.rs` → `#[tracing::instrument]` spans
+Без сервера осмысленный шаг ровно один: **собрать и прогнать W9 Phase 2 под
+Docker** (раздел 1). Это либо подтвердит интеграцию Kubo↔ozd, либо вскроет
+проблему совместимости go-ds-s3 заранее — до того, как появится железо для E30.
+Всё остальное — либо сделано, либо ждёт полки, либо backlog «по необходимости».
 
-**План:**
-
-```rust
-// ozd-daemon/main.rs
-use tracing_subscriber;
-
-let subscriber = tracing_subscriber::fmt()
-    .json()  // JSON instead of text, if env var OZD_LOG_FORMAT=json
-    .with_env_filter(EnvFilter::from_default_env())
-    .finish();
-tracing::subscriber::with_default(subscriber, || { ... });
-
-// ozd-app/src/pool.rs
-#[tracing::instrument(skip(self, data), fields(key = %key, data_len = data.len()))]
-pub async fn put_body(&self, key: &str, data: &[u8]) -> Result<()> {
-    // Automatically creates span with context
-}
-
-// Run: OZD_LOG_FORMAT=json RUST_LOG=info ./ozd
-// Output: {"timestamp": "...", "level": "INFO", "message": "...", "key": "...", "data_len": 256}
-```
-
-**Критерий:** JSON-логи; spans видны в Jaeger/Loki.
-
----
-
-### W21: Graceful Shutdown v2
-
-**Файлы:**
-- `ozd-daemon/main.rs` → SIGTERM handler
-- `ozd-app/src/pool.rs` → `shutdown()` метод
-
-**План:**
-
-```rust
-// ozd-daemon/main.rs
-let shutdown = shutdown_signal();
-tokio::select! {
-    _ = shutdown => {
-        info!("SIGTERM received, initiating graceful shutdown...");
-        pool.shutdown();  // Set flag
-        // Wait for in-flight operations (timeout 30s)
-        tokio::time::timeout(Duration::from_secs(30), pool.wait_idle()).ok();
-        break;
-    }
-    _ = server => {}
-}
-
-// ozd-app/src/pool.rs
-pub fn shutdown(&self) {
-    self.is_shutting_down.store(true, Ordering::Release);
-}
-
-pub fn put(&self, ...) -> Result<()> {
-    if self.is_shutting_down.load(Ordering::Acquire) {
-        return Err(DomainError::Shutdown);
-    }
-    // ... proceed
-}
-```
-
-**Критерий:** `kill -TERM <pid>` → чистое завершение за ≤30с; PUT → ошибка.
-
----
-
-### W22: Rate Limiter
-
-**Файлы:**
-- `ozd-ipfs/src/ratelimit.rs` → middleware
-- `ozd-daemon/main.rs` → конфиг
-
-**План:**
-
-```rust
-// ozd-ipfs/src/ratelimit.rs
-pub struct RateLimitMiddleware {
-    limiters: Arc<DashMap<IpAddr, TokenBucket>>,
-    rps: u32,
-}
-
-impl RateLimitMiddleware {
-    pub fn check(&self, addr: IpAddr) -> Result<(), StatusCode> {
-        let bucket = self.limiters.entry(addr).or_insert_with(|| TokenBucket::new(self.rps));
-        if bucket.take(1) {
-            Ok(())
-        } else {
-            Err(StatusCode::TOO_MANY_REQUESTS)
-        }
-    }
-}
-
-// ozd-daemon/main.rs
-// config.toml: rate_limit_rps = 100 (0 = disabled)
-
-// S3 router
-.layer(RateLimitLayer::new(config.rate_limit_rps))
-```
-
-**Критерий:** 101-й запрос в секунду → 429.
-
----
-
-### W23: Backup Snapshots
-
-**Файлы:**
-- `ozd-admin/src/lib.rs` → snapshot endpoints
-- `scripts/backup.sh` → архивирование
-
-**План:**
-
-```rust
-// ozd-admin/src/lib.rs — POST /admin/snapshot
-// Creates hardlinks of sealed segments into snapshots/<id>/
-// Instant (hardlinks)
-// Returns: { "snapshot_id": "...", "timestamp": "...", "size_bytes": ... }
-
-// GET /admin/snapshots
-// List all snapshots with metadata
-
-// scripts/backup.sh
-#!/bin/bash
-SNAPSHOT_ID=$(curl -X POST http://localhost:9100/admin/snapshot | jq -r .snapshot_id)
-tar -cf snapshots/$SNAPSHOT_ID.tar.zstd snapshots/$SNAPSHOT_ID/
-# Upload to S3, rsync, etc.
-```
-
-**Критерий:** snapshot < 1с; backup.sh архивирует.
-
----
-
-## Week 6 (July 7–11) — Operational Polish
-
-### W24: HTTP 503 on Shutdown
-
-Map `DomainError::Shutdown` → HTTP 503 ServiceUnavailable (S3 XML).
-
----
-
-### W25: DELETE /admin/snapshot
-
-Delete snapshot by ID; 404 if not found.
-
----
-
-### W26: snapshot_dir Config Override
-
-Allow global snapshot directory (instead of per-shard).
-
----
-
-## Week 7 (July 14–18) — Final Hardening
-
-### W27: DomainError Taxonomy
-
-Add `DomainError::Shutdown`, `DomainError::DiskSlow` sentinel-variants.
-
----
-
-### W28: /healthz Extended
-
-JSON response with shard count, faulted count, shutdown status.
-
----
-
-### W29: SIGHUP Config Hot-reload
-
-Reload gc_interval, scrub_interval, bg_max without restart.
-
----
-
-### W30: GET /admin/config
-
-Introspection endpoint (read-only config).
-
----
-
-### W31: Retention Policy
-
-`DELETE /admin/snapshot/old?keep=3` — delete old snapshots.
-
----
-
-## Summary: Execution Order
-
-**Current:** W9 ✅  
-**Immediate (1–2 дня):** W10  
-**Week 4 (3–5 дней):** W14–W18 (integration, bench, flaky-fix)  
-**Week 5 (3–5 дней):** W19–W23 (typed API, logging, shutdown, rate-limit, backup)  
-**Week 6 (1 день):** W24–W26 (polish)  
-**Week 7 (2 дня):** W27–W31 (hardening, introspection)  
-
-**Total:** ~3–4 недели до v0.2 (stable, production-ready).
-
----
-
-## Risk Mitigation
-
-| Risk | Mitigation |
-|------|-----------|
-| CI flakes on timing tests | W16: expand tolerances |
-| redb grows unbounded at 3.8B keys | Future: sharded redb or rocksdb (post-v0.2) |
-| Sync Pool for future multi-node | W8: async-trait adapter ready (not yet used) |
-| go-ds-s3 module build breaks | Fallback: pre-built Kubo image (Phase 3) |
-
----
-
-## Blockers / Unknowns
-
-1. **go-ds-s3 compatibility:** May need specific version of Kubo. Test build locally first.
-2. **systemd deployment:** Need root/sudo. Test on dev machine before prod.
-3. **CI infrastructure:** Ensure GitHub Actions runners have enough resources for integration tests.
-
----
-
-*Next review after W10 completion.*
+*Обновлять при закрытии E30/E31/E32. История решений — memory/ozd-implementation.*
