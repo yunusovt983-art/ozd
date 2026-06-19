@@ -1,9 +1,9 @@
 # W9 Phase 2: Kubo + go-ds-s3 плагин (встроенный, не .so)
 #
-# Сборка Kubo из исходников с s3ds-модулем. Go 1.22+ обязателен.
+# Сборка Kubo из исходников с s3ds-модулем. Kubo v0.32.1 требует Go >= 1.23.
 # go-ds-s3 (Peergos fork) — datastore поверх S3 API → наш ozd.
 
-FROM golang:1.22-bookworm AS builder
+FROM golang:1.23-bookworm AS builder
 
 # Клонируем Kubo нужной версии
 ARG KUBO_VERSION=v0.32.1

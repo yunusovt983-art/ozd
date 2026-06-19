@@ -1,14 +1,16 @@
 # W9.1: Сборка ozd-daemon для Docker (multi-stage, slim runtime)
-FROM rust:1.82-slim AS builder
+# rust:1-slim = последний стабильный 1.x (нужен edition2024 для redb 2.6.x — Rust ≥1.85)
+FROM rust:1-slim AS builder
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
+# пакет ozd-daemon, но бинарь называется `ozd` (см. [[bin]] в crates/ozd-daemon/Cargo.toml)
 RUN cargo build --release -p ozd-daemon && \
-    strip target/release/ozd-daemon
+    strip target/release/ozd
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /src/target/release/ozd-daemon /usr/local/bin/ozd
+COPY --from=builder /src/target/release/ozd /usr/local/bin/ozd
 COPY deployments/docker/ozd-docker.toml /etc/ozd/ozd.toml
 EXPOSE 9100
 HEALTHCHECK --interval=3s --timeout=2s --retries=10 CMD curl -sf http://localhost:9100/healthz
