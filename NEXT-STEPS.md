@@ -27,25 +27,23 @@ backlog.
 
 ## Что осталось без железа
 
-### 1. Верификация W9 Phase 2 (Kubo + go-ds-s3) — единственный незакрытый софт-шаг
+### 1. Верификация W9 Phase 2 (Kubo + go-ds-s3) — ✅ ЗАКРЫТО (2026-06-20, commit 4621d87)
 
-Файлы созданы (Dockerfile.kubo, kubo-init.sh, docker-compose обновлён), но
-**образ ни разу не собирался и не запускался**. Это прямой предшественник E30.
+Стек собран и прогнан под Docker/colima. `ipfs add`→`ipfs cat` roundtrip через
+ozd S3 работает; блоки лежат как `index.redb` + pack-сегменты на шардах (R=2),
+SigV4 ВКЛ, 0 отказов от Kubo. По ходу найдено и исправлено 3 runtime-бага
+(glibc-mismatch билдера, рассинхрон `datastore_spec`, ключ `regionEndpoint` вместо
+`endpoint`). go-ds-s3 v0.11.0 ↔ Kubo v0.32.1 — совместимы.
 
-- [ ] `docker compose -f deployments/docker/docker-compose.yml build` — проверить,
-      что Kubo с go-ds-s3 модулем вообще собирается (риск: версия go-ds-s3 vs Kubo
-      v0.32.1, см. KUBO-INTEGRATION.md).
-- [ ] `docker compose up` → дождаться healthcheck ozd → Kubo поднялся.
-- [ ] `ipfs --api=/ip4/127.0.0.1/tcp/5001 add <файл>` → блок улетел в ozd.
-- [ ] `ipfs cat <hash>` → бит-в-бит совпадает.
-- [ ] `bash scripts/kubo_smoke.sh` зелёный против того же ozd.
+- [x] `docker compose build` — Kubo c go-ds-s3 собирается (s3ds вшит в бинарь).
+- [x] `docker compose up` → ozd healthy → Kubo `Daemon is ready`.
+- [x] `ipfs add` → блок улетел в ozd (проверено на дисках).
+- [x] `ipfs cat` → бит-в-бит совпадает (повторяемо).
+- [ ] `bash scripts/kubo_smoke.sh` зелёный против auth-стека — **остаток на W32.1**
+      (скрипту нужен SigV4; см. [PLAN-WEEK.md](PLAN-WEEK.md)).
 
-**Если go-ds-s3 не собирается:** fallback — pre-built образ с плагином, либо
-зафиксировать совместимую пару версий. Задокументировать результат в
-deployments/docker/README-W9.md.
-
-**Критерий:** `ipfs add`→`ipfs cat` roundtrip через ozd на dev-машине под Docker.
-Это закрывает «E15/E30 без сервера» настолько, насколько возможно без полки.
+**Дальнейшее упрочнение (без железа):** см. [PLAN-WEEK.md](PLAN-WEEK.md) — multi-block,
+pin/GC, durable-прогон без tmpfs, авто-e2e в CI, проводка ozd-zfs health.
 
 ### 2. Backlog (всё помечено «не требуется сейчас» — делать только по необходимости)
 
