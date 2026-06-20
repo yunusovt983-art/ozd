@@ -17,6 +17,12 @@ fi
 
 # Инъекция Datastore.Spec: /blocks → s3ds (ozd), / → levelds
 # Формат: JSON-спецификация хранилищ Kubo (see docs/datastores.md)
+#
+# ВАЖНО: кастомный S3-адрес задаётся ключом "regionEndpoint", НЕ "endpoint"!
+# go-ds-s3 v0.11.0 читает m["regionEndpoint"] (plugin/s3ds.go:67) и только при
+# непустом значении включает WithS3ForcePathStyle(true)+WithEndpoint(...).
+# С неверным ключом адрес молча игнорируется → SDK уходит в НАСТОЯЩИЙ AWS S3
+# и возвращает "403 Forbidden: Forbidden" (с request-id/host-id, которых у ozd нет).
 S3_ENDPOINT="${OZD_S3_ENDPOINT:-http://ozd:9100}"
 S3_BUCKET="${OZD_S3_BUCKET:-kubo}"
 S3_REGION="${OZD_S3_REGION:-us-east-1}"
@@ -31,7 +37,7 @@ SPEC=$(cat <<EOF
         "type": "s3ds",
         "region": "${S3_REGION}",
         "bucket": "${S3_BUCKET}",
-        "endpoint": "${S3_ENDPOINT}",
+        "regionEndpoint": "${S3_ENDPOINT}",
         "rootDirectory": "",
         "accessKey": "${S3_ACCESS_KEY}",
         "secretKey": "${S3_SECRET_KEY}",
@@ -62,6 +68,17 @@ if command -v jq >/dev/null 2>&1; then
   jq --argjson spec "$SPEC" '.Datastore.Spec = $spec' "${IPFS_PATH}/config" > "${IPFS_PATH}/config.tmp"
   mv "${IPFS_PATH}/config.tmp" "${IPFS_PATH}/config"
   echo "Datastore.Spec injected: /blocks → s3ds (${S3_ENDPOINT})"
+
+  # Kubo при старте сверяет config.Datastore.Spec (его «DiskSpec») с файлом
+  # ${IPFS_PATH}/datastore_spec. ipfs init записал туда дефолтный flatfs-DiskSpec,
+  # поэтому после подмены Spec надо переписать и datastore_spec, иначе daemon
+  # падает: "datastore configuration ... does not match what is on disk".
+  # DiskSpec для s3ds = {bucket, mountpoint, region, rootDirectory}
+  # (endpoint и ключи в DiskSpec не входят — они не влияют на on-disk identity).
+  # Формат должен ТОЧНО совпадать с spec.String() Kubo: ключи отсортированы.
+  printf '%s' "{\"mounts\":[{\"bucket\":\"${S3_BUCKET}\",\"mountpoint\":\"/blocks\",\"region\":\"${S3_REGION}\",\"rootDirectory\":\"\"},{\"mountpoint\":\"/\",\"path\":\"datastore\",\"type\":\"levelds\"}],\"type\":\"mount\"}" \
+    > "${IPFS_PATH}/datastore_spec"
+  echo "datastore_spec synced to s3ds DiskSpec"
 else
   echo "WARNING: jq not found — Datastore.Spec NOT injected (install jq)"
 fi

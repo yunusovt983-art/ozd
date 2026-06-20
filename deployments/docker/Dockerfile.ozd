@@ -1,6 +1,10 @@
 # W9.1: Сборка ozd-daemon для Docker (multi-stage, slim runtime)
-# rust:1-slim = последний стабильный 1.x (нужен edition2024 для redb 2.6.x — Rust ≥1.85)
-FROM rust:1-slim AS builder
+# rust:1-slim-bookworm = последний стабильный 1.x на Debian bookworm
+# (нужен edition2024 для redb 2.6.x — Rust ≥1.85). База ДОЛЖНА совпадать с
+# рантаймом (debian:bookworm-slim, glibc 2.36): на rust:1-slim (Debian trixie)
+# бинарь линкуется к GLIBC_2.39 и падает в bookworm с
+# "version `GLIBC_2.39' not found".
+FROM rust:1-slim-bookworm AS builder
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
