@@ -11,9 +11,14 @@ RUN git clone --depth 1 --branch ${KUBO_VERSION} https://github.com/ipfs/kubo.gi
 
 WORKDIR /build/kubo
 
-# Добавляем go-ds-s3 как плагин (паттерн из Peergos/go-ds-s3 README)
+# Добавляем go-ds-s3 как плагин (паттерн из Peergos/go-ds-s3 README).
+# ВАЖЕН порядок: preload.go надо сгенерировать ДО `go mod tidy`, иначе tidy
+# выбросит go-ds-s3 из go.mod как неиспользуемый (preload.go ещё не создан и
+# плагин формально никем не импортируется) → make build падает с
+# "no required module provides package .../go-ds-s3/plugin".
 RUN echo 's3ds github.com/ipfs/go-ds-s3/plugin 0' >> plugin/loader/preload_list && \
     go get github.com/ipfs/go-ds-s3/plugin@latest && \
+    bash plugin/loader/preload.sh > plugin/loader/preload.go && \
     go mod tidy
 
 # Сборка
